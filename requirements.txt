@@ -1,0 +1,9 @@
+cat > requirements_minimal.txt << 'EOF'
+google-generativeai
+gtts
+playsound
+SpeechRecognition
+googletrans==4.0.0-rc1
+requests
+python-dotenv
+EOF
