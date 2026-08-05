@@ -1,0 +1,35 @@
+cat > .gitignore << 'EOF'
+# Python
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Rico Data (user info, memory, logs)
+*.db
+*.sqlite
+*.sqlite3
+*.json
+*.log
+*.mp3
+*.wav
+
+# Secrets
+.env
+*.key
+*.pem
+
+# IDE
+.vscode/
+.idea/
+.DS_Store
+*.swp
+*.swo
+
+# Build
+dist/
+build/
+*.egg-info/
+EOF
