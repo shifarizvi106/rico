@@ -1,0 +1,121 @@
+#!/usr/bin/env python3
+import sys, os, datetime, threading
+from pathlib import Path
+from PyQt5.QtWidgets import *
+from PyQt5.QtCore import *
+from PyQt5.QtGui import *
+from rico import RicoAssistant
+
+class RicoGUI(QMainWindow):
+    def __init__(self):
+        super().__init__()
+        self.rico = RicoAssistant(text_mode=True, memory_enabled=True)
+        self.setup_ui()
+        self.add_msg("Rico", "Hey sweetheart! I'm ready!")
+        # Load chat history on startup
+        if Path("chat_history.txt").exists():
+            self.chat.setPlainText(Path("chat_history.txt").read_text())
+
+    def setup_ui(self):
+        self.setWindowTitle("Rico Assistant")
+        self.setGeometry(100, 100, 550, 700)
+        self.setStyleSheet("""
+            QMainWindow { background: qlineargradient(x1:0,y1:0,x2:1,y2:1, stop:0 #2b0b23, stop:1 #4a103c); }
+            QWidget#central { background: qlineargradient(x1:0,y1:0,x2:0,y2:1, stop:0 #5c184c, stop:0.5 #38082e, stop:1 #190214); border: 3px solid #ff85c0; border-radius: 30px; }
+            QTextEdit { background: #170213; color: #ffd6e7; border-top: 3px solid #000; border-left: 3px solid #000; border-right: 2px solid #ff85c0; border-bottom: 2px solid #ff85c0; border-radius: 18px; padding: 12px; font-size: 14px; }
+            QLineEdit { background: qlineargradient(x1:0,y1:0,x2:0,y2:1, stop:0 #24031d, stop:1 #450b38); color: #fff; border-top: 2px solid #12010e; border-left: 2px solid #12010e; border-right: 1px solid #ff9ebb; border-bottom: 1px solid #ff9ebb; border-radius: 20px; padding: 8px 15px; }
+            QPushButton { background: qlineargradient(x1:0,y1:0,x2:0,y2:1, stop:0 #ffb3d9, stop:0.15 #ff69b4, stop:0.5 #ff1493, stop:0.51 #d8006f, stop:1 #ff69b4); color: #fff; border: 1px solid #ffa3d1; border-bottom: 3px solid #800040; border-radius: 18px; padding: 6px 16px; font-weight: bold; }
+            QPushButton:pressed { background: #d8006f; border-top: 2px solid #500028; }
+            QPushButton#voiceBtn { background: qlineargradient(x1:0,y1:0,x2:0,y2:1, stop:0 #ffccd5, stop:0.5 #c9184a, stop:1 #800f2f); border: 2px solid #ffb3c1; border-radius: 22px; min-width: 44px; max-width: 44px; min-height: 44px; max-height: 44px; font-size: 14px; }
+            QPushButton#voiceBtn:checked { background: #ff0055; }
+            .quickBtn { background: qlineargradient(x1:0,y1:0,x2:0,y2:1, stop:0 #ffb6c1, stop:0.5 #db7093, stop:1 #ffb6c1); color: #2b0b23; border-radius: 12px; padding: 4px 10px; font-size: 11px; }
+            QStatusBar { background: #170213; color: #ffb6c1; font-weight: bold; }
+        """)
+
+        central = QWidget(objectName="central")
+        self.setCentralWidget(central)
+        layout = QVBoxLayout(central, spacing=10, contentsMargins=QMargins(20, 20, 20, 20))
+
+        # Header
+        hdr = QHBoxLayout()
+        hdr.addWidget(QLabel("RICO", styleSheet="color: #ff9ebb; font-size: 22px; font-weight: 900;"))
+        hdr.addStretch()
+        hdr.addWidget(QLabel("Active", styleSheet="color: #55ff99; font-weight: bold;"))
+        layout.addLayout(hdr)
+
+        # Chat Screen
+        self.chat = QTextEdit(readOnly=True)
+        layout.addWidget(self.chat, 2)
+
+        # Quick Actions
+        quick = QHBoxLayout()
+        actions = [("Snap", lambda: self.add_msg("Rico", "Screenshot captured!")),
+                   ("Clip", lambda: self.add_msg("Rico", "Reading clipboard...")),
+                   ("Time", lambda: self.add_msg("Rico", f"It's {datetime.datetime.now().strftime('%I:%M %p')}")),
+                   ("Memory", lambda: self.add_msg("Rico", "Checking memory bank..."))]
+        for txt, fn in actions:
+            btn = QPushButton(txt, clicked=fn)
+            btn.setProperty("class", "quickBtn")
+            quick.addWidget(btn)
+        quick.addStretch()
+        layout.addLayout(quick)
+
+        # Input Section
+        inp = QHBoxLayout(spacing=8)
+        self.voice_btn = QPushButton("MIC", objectName="voiceBtn", checkable=True, clicked=self.toggle_voice)
+        self.field = QLineEdit(placeholderText="Type a message...", returnPressed=self.send_msg)
+        self.send_btn = QPushButton("Send", clicked=self.send_msg)
+        
+        inp.addWidget(self.voice_btn)
+        inp.addWidget(self.field, 3)
+        inp.addWidget(self.send_btn)
+        layout.addLayout(inp)
+
+        self.status = QStatusBar()
+        self.setStatusBar(self.status)
+        self.status.showMessage("Ready")
+
+    def add_msg(self, sender, text):
+        clr, pfx = ("#ffb3d9", "You") if sender == "You" else ("#ff3399", "Rico")
+        self.chat.append(f"<div style='margin:4px 0;'><b style='color:{clr};'>{pfx}:</b> <span style='color:#fff;'>{text}</span></div>")
+        self.chat.verticalScrollBar().setValue(self.chat.verticalScrollBar().maximum())
+        # Auto-save chat history
+        Path("chat_history.txt").write_text(self.chat.toPlainText())
+
+    def send_msg(self):
+        txt = self.field.text().strip()
+        if not txt: return
+        self.field.clear()
+        self.add_msg("You", txt)
+        self.status.showMessage("Thinking...")
+        self.send_btn.setEnabled(False)
+        self.chat.append("<div style='color:#ff69b4;font-style:italic;'>Rico is typing...</div>")
+        threading.Thread(target=self._process, args=(txt,), daemon=True).start()
+
+    def _process(self, txt):
+        try:
+            res = self.rico.chat(txt)
+            # Remove typing indicator
+            cursor = self.chat.textCursor()
+            cursor.movePosition(QTextCursor.End)
+            cursor.select(QTextCursor.BlockUnderCursor)
+            cursor.removeSelectedText()
+            self.add_msg("Rico", res)
+            self.status.showMessage("Ready")
+        except Exception as e:
+            self.add_msg("Rico", f"Glitch: {str(e)}")
+            self.status.showMessage("Error")
+        finally:
+            self.send_btn.setEnabled(True)
+
+    def toggle_voice(self):
+        active = self.voice_btn.isChecked()
+        self.voice_btn.setText("REC" if active else "MIC")
+        self.status.showMessage("Listening..." if active else "Ready")
+
+if __name__ == "__main__":
+    app = QApplication(sys.argv)
+    app.setStyle('Fusion')
+    win = RicoGUI()
+    win.show()
+    sys.exit(app.exec_())
