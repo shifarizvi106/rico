@@ -209,7 +209,7 @@ def _add_personality(self, text: str) -> str:
         r = sr.Recognizer()
         with sr.Microphone() as source:
             lang_name = LANGUAGES.get(self.language_code, 'Unknown')
-            print(f"🎤 Listening in {lang_name}...")
+            print(f"Listening in {lang_name}...")
             r.adjust_for_ambient_noise(source, duration=1)
             try:
                 audio = r.listen(source, timeout=5, phrase_time_limit=10)
@@ -217,9 +217,9 @@ def _add_personality(self, text: str) -> str:
                 return ""
         
         try:
-            print("🔍 Recognizing...")
+            print(" Recognizing...")
             query = r.recognize_google(audio, language=self.language_code)
-            print(f"🗣️ You said: {query}\n")
+            print(f" You said: {query}\n")
             return query.lower()
         except sr.UnknownValueError:
             print("❌ Speech not understood")
@@ -479,8 +479,14 @@ if result:
         except Exception as e:
             return f"Sorry, I couldn't connect to the news service. Error: {e}"
 
-    def _process_ai_query(self, query: str) -> str:
-        """Processes a query using WolframAlpha first, then Gemini."""
+   def _process_ai_query(self, query: str) -> str:
+    if self.llm_model:
+        try:
+            prompt = f"# Soul\n{self.soul}\n\n# User\n{query}\n\n# Response as Rico"
+            return self.llm_model.generate_content(prompt).text.strip()
+        except Exception as e:
+            return f"AI error: {e}"
+    return "AI offline."
         # Check if it's a calculation
         calc_result = self._calculate(query)
         if calc_result:
