@@ -28,6 +28,8 @@ class RicoGUI(QMainWindow):
     # Double-click to show
     self.tray_icon.activated.connect(self.tray_click)
 
+self.setup_tray()
+
 def tray_click(self, reason):
     if reason == QSystemTrayIcon.DoubleClick:
         self.showNormal()
@@ -130,6 +132,13 @@ def tray_click(self, reason):
         active = self.voice_btn.isChecked()
         self.voice_btn.setText("REC" if active else "MIC")
         self.status.showMessage("Listening..." if active else "Ready")
+
+def closeEvent(self, event):
+    if self.tray_icon.isVisible():
+        self.hide()
+        event.ignore()
+    else:
+        event.accept()
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
