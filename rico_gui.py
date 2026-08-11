@@ -85,6 +85,9 @@ class RicoGUI(QMainWindow):
             ("Dark Mode", self.dark_mode_ui),
             ("Analyze", self.analyze_image_ui),
             ("PDF", self.summarize_pdf_ui),
+            ("Index", self.index_ui),
+("Search", self.search_ui),
+("Stats", self.stats_ui),
         ]
         for txt, fn in actions:
             btn = QPushButton(txt, clicked=fn)
@@ -237,6 +240,31 @@ def summarize_pdf_ui(self):
         self.add_msg("Rico", f"Summarizing {os.path.basename(filepath)}...")
         result = self.rico.summarize_pdf(filepath)
         self.add_msg("Rico", f"Summary: {result}")
+
+def index_ui(self):
+    """Open folder dialog and index documents"""
+    folder = QFileDialog.getExistingDirectory(
+        self, "Select Folder to Index", os.path.expanduser("~")
+    )
+    if folder:
+        self.add_msg("Rico", f"📚 Indexing folder: {folder}...")
+        result = self.rico.index_documents(folder)
+        self.add_msg("Rico", result)
+
+def search_ui(self):
+    """Search knowledge base"""
+    query, ok = QInputDialog.getText(
+        self, "Search Knowledge", "What would you like to know?"
+    )
+    if ok and query:
+        self.add_msg("Rico", f"🔍 Searching: {query}...")
+        result = self.rico.search_knowledge(query)
+        self.add_msg("Rico", result)
+
+def stats_ui(self):
+    """Show knowledge base stats"""
+    result = self.rico.get_knowledge_stats()
+    self.add_msg("Rico", result)
 
 
 if __name__ == "__main__":
