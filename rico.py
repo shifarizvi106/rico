@@ -739,6 +739,227 @@ elif "calendar" in query_en or "events" in query_en:
     else:
         response_en = self.get_calendar_events()
 
+def set_reminder(self, text, time, date=None):
+    """Set a reminder using Apple Reminders"""
+    try:
+        import subprocess
+        import datetime
+        
+        if date is None:
+            date = datetime.datetime.now().strftime("%Y-%m-%d")
+        
+        due_datetime = f"{date} {time}:00"
+        
+        script = f'''
+        tell application "Reminders"
+            tell default list
+                set newReminder to make new reminder with properties {{name:"{text}", due date:date "{due_datetime}"}}
+            end tell
+        end tell
+        '''
+        
+        subprocess.run(["osascript", "-e", script], check=True)
+        return f"Reminder set: '{text}' for {date} at {time}"
+    except Exception as e:
+        return f"Couldn't set reminder: {e}"
+
+def get_reminders(self):
+    """Get active reminders"""
+    try:
+        import subprocess
+        
+        script = '''
+        tell application "Reminders"
+            tell default list
+                set reminderList to ""
+                repeat with aReminder in reminders
+                    if completed of aReminder is false then
+                        set reminderTitle to name of aReminder
+                        set reminderDate to due date of aReminder
+                        if reminderDate is not missing value then
+                            set reminderList to reminderList & reminderTitle & " (due: " & (date string of reminderDate) & " at " & (time string of reminderDate) & ")|"
+                        else
+                            set reminderList to reminderList & reminderTitle & " (no due date)|"
+                        end if
+                    end if
+                end repeat
+                return reminderList
+            end tell
+        end tell
+        '''
+        
+        result = subprocess.run(["osascript", "-e", script], capture_output=True, text=True)
+        reminders = result.stdout.strip()
+        
+        if reminders:
+            reminder_list = [r.strip() for r in reminders.split('|') if r.strip()]
+            if reminder_list:
+                return "Your reminders:\n" + "\n".join([f"  • {r}" for r in reminder_list[:10]])
+        return "No active reminders."
+    except Exception as e:
+        return f"Couldn't get reminders: {e}"
+
+def complete_reminder(self, title):
+    """Mark a reminder as completed"""
+    try:
+        import subprocess
+        
+        script = f'''
+        tell application "Reminders"
+            tell default list
+                repeat with aReminder in reminders
+                    if name of aReminder contains "{title}" then
+                        set completed of aReminder to true
+                        return "Completed: " & name of aReminder
+                    end if
+                end repeat
+                return "Reminder not found"
+            end tell
+        end tell
+        '''
+        
+        result = subprocess.run(["osascript", "-e", script], capture_output=True, text=True)
+        return result.stdout.strip()
+    except Exception as e:
+        return f"Couldn't complete reminder: {e}"
+
+elif "reminder" in query_en or "remind" in query_en:
+    if "complete" in query_en or "done" in query_en:
+        # Extract reminder title
+        match = re.search(r'(?:complete|done)\s+reminder\s+(.+?)(?:\s*\.\s*|$)', query_en)
+        if match:
+            title = match.group(1).strip()
+            response_en = self.complete_reminder(title)
+        else:
+            response_en = "Which reminder to complete?"
+    elif "list" in query_en or "show" in query_en:
+        response_en = self.get_reminders()
+    else:
+        # Set reminder: remind me to [task] at [time]
+        match = re.search(r'remind\s+me\s+to\s+(.+?)\s+at\s+(\d{1,2}:\d{2})', query_en)
+        if match:
+            task = match.group(1).strip()
+            time = match.group(2).strip()
+            response_en = self.set_reminder(task, time)
+        else:
+            response_en = "Usage: remind me to [task] at [HH:MM]"
+
+def set_volume(self, level):
+    """Set system volume (0-100)"""
+    try:
+        import subprocess
+        if 0 <= level <= 100:
+            script = f'set volume output volume {level}'
+            subprocess.run(["osascript", "-e", script], check=True)
+            return f"Volume set to {level}%"
+        return "Volume must be between 0 and 100"
+    except Exception as e:
+        return f"Couldn't set volume: {e}"
+
+def set_brightness(self, level):
+    """Set display brightness (0-100)"""
+    try:
+        import subprocess
+        if 0 <= level <= 100:
+            script = f'''
+            tell application "System Events"
+                repeat with d in (get display brightness)
+                    set display brightness to {level/100}
+                end repeat
+            end tell
+            '''
+            subprocess.run(["osascript", "-e", script], check=True)
+            return f"Brightness set to {level}%"
+        return "Brightness must be between 0 and 100"
+    except Exception as e:
+        return f"Couldn't set brightness: {e}"
+
+def toggle_dark_mode(self):
+    """Toggle dark mode on/off"""
+    try:
+        import subprocess
+        script = '''
+        tell application "System Events"
+            tell appearance preferences
+                set dark mode to not dark mode
+            end tell
+        end tell
+        '''
+        subprocess.run(["osascript", "-e", script], check=True)
+        return "Dark mode toggled"
+    except Exception as e:
+        return f"Couldn't toggle dark mode: {e}"
+
+def lock_screen(self):
+    """Lock the screen"""
+    try:
+        import subprocess
+        script = '''
+        tell application "System Events"
+            keystroke "q" using {control down, command down}
+        end tell
+        '''
+        subprocess.run(["osascript", "-e", script], check=True)
+        return "Screen locked"
+    except Exception as e:
+        return f"Couldn't lock screen: {e}"
+
+def restart_mac(self):
+    """Restart the Mac (requires confirmation)"""
+    try:
+        import subprocess
+        script = '''
+        tell application "System Events"
+            restart
+        end tell
+        '''
+        subprocess.run(["osascript", "-e", script], check=True)
+        return "Restarting..."
+    except Exception as e:
+        return f"Couldn't restart: {e}"
+
+def shutdown_mac(self):
+    """Shutdown the Mac (requires confirmation)"""
+    try:
+        import subprocess
+        script = '''
+        tell application "System Events"
+            shut down
+        end tell
+        '''
+        subprocess.run(["osascript", "-e", script], check=True)
+        return "Shutting down..."
+    except Exception as e:
+        return f"Couldn't shutdown: {e}"
+
+elif "volume" in query_en:
+    match = re.search(r'volume\s+(\d+)', query_en)
+    if match:
+        level = int(match.group(1))
+        response_en = self.set_volume(level)
+    else:
+        response_en = "Usage: volume [0-100]"
+
+elif "brightness" in query_en:
+    match = re.search(r'brightness\s+(\d+)', query_en)
+    if match:
+        level = int(match.group(1))
+        response_en = self.set_brightness(level)
+    else:
+        response_en = "Usage: brightness [0-100]"
+
+elif "dark mode" in query_en:
+    response_en = self.toggle_dark_mode()
+
+elif "lock screen" in query_en:
+    response_en = self.lock_screen()
+
+elif "restart" in query_en:
+    response_en = self.restart_mac()
+
+elif "shutdown" in query_en:
+    response_en = self.shutdown_mac()
+
 
 if __name__ == "__main__":
     import sys
