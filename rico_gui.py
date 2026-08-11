@@ -88,6 +88,8 @@ class RicoGUI(QMainWindow):
             ("Index", self.index_ui),
 ("Search", self.search_ui),
 ("Stats", self.stats_ui),
+            ("Wake", self.toggle_wake_ui),
+            
         ]
         for txt, fn in actions:
             btn = QPushButton(txt, clicked=fn)
@@ -264,6 +266,10 @@ def search_ui(self):
 def stats_ui(self):
     """Show knowledge base stats"""
     result = self.rico.get_knowledge_stats()
+    self.add_msg("Rico", result)
+
+def toggle_wake_ui(self):
+    result = self.rico.toggle_wake_word()
     self.add_msg("Rico", result)
 
 
