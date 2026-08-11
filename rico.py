@@ -21,6 +21,12 @@ import threading
 import time
 import random
 from rico_rag import RicoRAG
+
+try:
+    from playwright.sync_api import sync_playwright
+    WEB_AVAILABLE = True
+except:
+    WEB_AVAILABLE = False
 try:
     import pvporcupine
     import pyaudio
@@ -84,6 +90,10 @@ class RicoAssistant:
 else:
     self.wake_word_enabled = False
     print("Wake word disabled - install pvporcupine")
+
+    self.last_active = datetime.datetime.now()
+threading.Thread(target=self._predict_loop, daemon=True).start()
+
 
 
     def _load_soul(self):
@@ -971,6 +981,26 @@ def toggle_wake_word(self):
     """Toggle wake word on/off"""
     self.wake_word_enabled = not self.wake_word_enabled
     return f"Wake word {'enabled' if self.wake_word_enabled else 'disabled'}"
+
+def automate(self, task):
+    if not WEB_AVAILABLE:
+        return "Install: pip install playwright && playwright install"
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=False)
+        page = browser.new_page()
+        page.goto(f"https://google.com/search?q={task.replace(' ', '+')}")
+        return f"Opened search for: {task}"
+
+def _predict_loop(self):
+    while True:
+        time.sleep(300)  # Every 5 min
+        if (datetime.datetime.now() - self.last_active).seconds > 3600:
+            self.speak("You've been quiet. Want to do something?")
+            self._last_prediction = "Say 'help' for suggestions"
+            self.last_active = datetime.datetime.now()
+
+def get_prediction(self):
+    return getattr(self, '_last_prediction', None)
 
 
 def summarize_pdf(self, filepath, sentences=5):
