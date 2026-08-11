@@ -17,6 +17,9 @@ import PIL from Image
 from io import BytesIO
 import sqlite3
 from pathlib import Path
+import PyQt5.QtWidgets
+import QsystemTrayIcon, Qmenu, Qstyle
+
 
  # Text to speech only works when it is not in text mode, duh.
 try :
