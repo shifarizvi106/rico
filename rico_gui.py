@@ -76,8 +76,11 @@ def tray_click(self, reason):
                    ("Clip", lambda: self.add_msg("Rico", "Reading clipboard...")),
                    ("Time", lambda: self.add_msg("Rico", f"It's {datetime.datetime.now().strftime('%I:%M %p')}")),
                    ("Memory", lambda: self.add_msg("Rico", "Checking memory bank...")),
-                  ("📅 Calendar", self.show_calendar),
-                  ("⏰ Reminders", self.show_reminders),]
+                  ("Calendar", self.show_calendar),
+                  ("Reminders", self.show_reminders),
+                  ("Volume", self.volume_ui),
+("Brightness", self.brightness_ui),
+("Dark Mode", self.dark_mode_ui),]
         for txt, fn in actions:
             btn = QPushButton(txt, clicked=fn)
             btn.setProperty("class", "quickBtn")
@@ -182,6 +185,19 @@ def show_reminders(self):
     self.add_msg("Rico", "Checking reminders...")
     result = self.rico.get_reminders()
     self.add_msg("Rico", result)
+
+def volume_ui(self):
+    level, ok = QInputDialog.getInt(self, "Set Volume", "Volume (0-100):", 50, 0, 100)
+    if ok:
+        self.add_msg("Rico", self.rico.set_volume(level))
+
+def brightness_ui(self):
+    level, ok = QInputDialog.getInt(self, "Set Brightness", "Brightness (0-100):", 50, 0, 100)
+    if ok:
+        self.add_msg("Rico", self.rico.set_brightness(level))
+
+def dark_mode_ui(self):
+    self.add_msg("Rico", self.rico.toggle_dark_mode())
 
 
 
