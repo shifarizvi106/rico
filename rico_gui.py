@@ -72,7 +72,7 @@ def tray_click(self, reason):
 
         # Quick Actions
         quick = QHBoxLayout()
-        actions = [("Snap", lambda: self.add_msg("Rico", "Screenshot captured!")),
+        actions = [("Snap", lambda: self.add_msg("Rico", self.rico.take_screenshot())),
                    ("Clip", lambda: self.add_msg("Rico", "Reading clipboard...")),
                    ("Time", lambda: self.add_msg("Rico", f"It's {datetime.datetime.now().strftime('%I:%M %p')}")),
                    ("Memory", lambda: self.add_msg("Rico", "Checking memory bank..."))]
@@ -82,6 +82,24 @@ def tray_click(self, reason):
             quick.addWidget(btn)
         quick.addStretch()
         layout.addLayout(quick)
+
+       # In the quick actions section, add:
+(" Analyze", self.analyze_image_ui),
+
+# Add this method:
+def analyze_image_ui(self):
+    """Open file dialog and analyze selected image"""
+    from PyQt5.QtWidgets import QFileDialog
+    
+    filepath, _ = QFileDialog.getOpenFileName(
+        self, "Select Image", os.path.expanduser("~"),
+        "Images (*.png *.jpg *.jpeg *.gif *.bmp *.tiff)"
+    )
+    
+    if filepath:
+        self.add_msg("Rico", f"Analyzing {os.path.basename(filepath)}...")
+        result = self.rico.analyze_image_file(filepath)
+        self.add_msg("Rico", f"Analysis: {result}")
 
         # Input Section
         inp = QHBoxLayout(spacing=8)
@@ -153,7 +171,7 @@ def closeEvent(self, event):
     else:
         event.accept()
 
-("Snap", lambda: self.add_msg("Rico", self.rico.take_screenshot())),
+
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
