@@ -21,6 +21,12 @@ import threading
 import time
 import random
 from rico_rag import RicoRAG
+try:
+    import pvporcupine
+    import pyaudio
+    PORCUPINE_AVAILABLE = True
+except ImportError:
+    PORCUPINE_AVAILABLE = False
 
 try:
     import speech_recognition as sr
@@ -69,6 +75,16 @@ class RicoAssistant:
 
     # RAG
     self.rag = RicoRAG()
+
+    # wake word
+
+    if PORCUPINE_AVAILABLE:
+    self.wake_word_enabled = True
+    self._start_wake_word_listener()
+else:
+    self.wake_word_enabled = False
+    print("Wake word disabled - install pvporcupine")
+
 
     def _load_soul(self):
         soul_path = "data/soul.md"
@@ -691,6 +707,24 @@ def get_knowledge_stats(self):
     """Get knowledge base statistics"""
     return self.rag.get_stats()
 
+    def toggle_rag_mode(self, mode=None):
+    """Toggle RAG search mode: auto, manual, off"""
+    if mode is None:
+        self.rag_mode = getattr(self, 'rag_mode', 'auto')
+        modes = ['auto', 'manual', 'off']
+        current_idx = modes.index(self.rag_mode)
+        self.rag_mode = modes[(current_idx + 1) % len(modes)]
+        return f"RAG mode: {self.rag_mode.upper()}"
+    
+    self.rag_mode = mode
+    return f"RAG mode: {mode.upper()}"
+
+def is_rag_enabled(self):
+    """Check if RAG should be used"""
+    if not hasattr(self, 'rag_mode'):
+        self.rag_mode = 'auto'
+    return self.rag_mode != 'off'
+
     def run(self):
         self.speak("Pick your language - English, Hindi, or Urdu.", 'en')
         self.speak("अपनी भाषा चुनें - हिंदी, उर्दू, या अंग्रेज़ी।", 'hi')
@@ -892,6 +926,52 @@ def start_wake_word(self):
     except:
         print("Wake word disabled - install pvporcupine")
 
+def _start_wake_word_listener(self):
+    """Start listening for 'Hey Rico' in background"""
+    if not PORCUPINE_AVAILABLE:
+        return
+    
+    def wake_listener():
+        porcupine = pvporcupine.create(keywords=["hey rico"])
+        pa = pyaudio.PyAudio()
+        stream = pa.open(
+            rate=porcupine.sample_rate,
+            channels=1,
+            format=pyaudio.paInt16,
+            input=True,
+            frames_per_buffer=porcupine.frame_length
+        )
+        
+        print("Listening for 'Hey Rico'...")
+        
+        while True:
+            try:
+                pcm = stream.read(porcupine.frame_length)
+                if porcupine.process(pcm) >= 0:
+                    self._on_wake_word()
+            except:
+                pass
+        
+        stream.stop_stream()
+        stream.close()
+        pa.terminate()
+    
+    threading.Thread(target=wake_listener, daemon=True).start()
+
+def _on_wake_word(self):
+    """Handle wake word detection"""
+    self.speak("Yes? I'm listening.")
+    # Start listening for command
+    if not self.text_mode:
+        command = self._listen()
+        if command:
+            self.process_query(command)
+
+def toggle_wake_word(self):
+    """Toggle wake word on/off"""
+    self.wake_word_enabled = not self.wake_word_enabled
+    return f"Wake word {'enabled' if self.wake_word_enabled else 'disabled'}"
+
 
 def summarize_pdf(self, filepath, sentences=5):
     """Extract and summarize text from a PDF file"""
@@ -964,6 +1044,9 @@ elif "search knowledge" in q_en:
 
 elif "knowledge stats" in q_en:
     response = self.get_knowledge_stats()
+
+elif "rag mode" in q_en:
+    response = self.toggle_rag_mode()
 
 
 
