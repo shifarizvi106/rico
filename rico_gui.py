@@ -153,6 +153,8 @@ def closeEvent(self, event):
     else:
         event.accept()
 
+("Snap", lambda: self.add_msg("Rico", self.rico.take_screenshot())),
+
 if __name__ == "__main__":
     app = QApplication(sys.argv)
     app.setStyle('Fusion')
