@@ -7,14 +7,32 @@ from PyQt5.QtGui import *
 from rico import RicoAssistant
 
 class RicoGUI(QMainWindow):
-    def __init__(self):
-        super().__init__()
-        self.rico = RicoAssistant(text_mode=True, memory_enabled=True)
-        self.setup_ui()
-        self.add_msg("Rico", "Hey sweetheart! I'm ready!")
-        # Load chat history on startup
-        if Path("chat_history.txt").exists():
-            self.chat.setPlainText(Path("chat_history.txt").read_text())
+   def setup_tray(self):
+    """Add system tray icon"""
+    self.tray_icon = QSystemTrayIcon(self)
+    self.tray_icon.setIcon(self.style().standardIcon(QStyle.SP_ComputerIcon))
+    
+    # Create tray menu
+    tray_menu = QMenu()
+    show_action = tray_menu.addAction("Show")
+    show_action.triggered.connect(self.show)
+    hide_action = tray_menu.addAction("Hide")
+    hide_action.triggered.connect(self.hide)
+    tray_menu.addSeparator()
+    quit_action = tray_menu.addAction("Quit")
+    quit_action.triggered.connect(self.close)
+    
+    self.tray_icon.setContextMenu(tray_menu)
+    self.tray_icon.show()
+    
+    # Double-click to show
+    self.tray_icon.activated.connect(self.tray_click)
+
+def tray_click(self, reason):
+    if reason == QSystemTrayIcon.DoubleClick:
+        self.showNormal()
+        self.raise_()
+        self.activateWindow()
 
     def setup_ui(self):
         self.setWindowTitle("Rico Assistant")
