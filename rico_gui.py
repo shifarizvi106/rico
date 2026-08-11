@@ -1,42 +1,30 @@
 #!/usr/bin/env python3
-import sys, os, datetime, threading
+import sys
+import os
+import datetime
+import threading
 from pathlib import Path
+
 from PyQt5.QtWidgets import *
 from PyQt5.QtCore import *
 from PyQt5.QtGui import *
-from rico import RicoAssistant
 from PyQt5.QtWidgets import QShortcut
 from PyQt5.QtGui import QKeySequence
 
+from rico import RicoAssistant
+
+
 class RicoGUI(QMainWindow):
-   def setup_tray(self):
-    """Add system tray icon"""
-    self.tray_icon = QSystemTrayIcon(self)
-    self.tray_icon.setIcon(self.style().standardIcon(QStyle.SP_ComputerIcon))
-    
-    # Create tray menu
-    tray_menu = QMenu()
-    show_action = tray_menu.addAction("Show")
-    show_action.triggered.connect(self.show)
-    hide_action = tray_menu.addAction("Hide")
-    hide_action.triggered.connect(self.hide)
-    tray_menu.addSeparator()
-    quit_action = tray_menu.addAction("Quit")
-    quit_action.triggered.connect(self.close)
-    
-    self.tray_icon.setContextMenu(tray_menu)
-    self.tray_icon.show()
-    
-    # Double-click to show
-    self.tray_icon.activated.connect(self.tray_click)
-
-self.setup_tray()
-
-def tray_click(self, reason):
-    if reason == QSystemTrayIcon.DoubleClick:
-        self.showNormal()
-        self.raise_()
-        self.activateWindow()
+    def __init__(self):
+        super().__init__()
+        self.rico = RicoAssistant(text_mode=True, memory_enabled=True)
+        self.setup_ui()
+        self.setup_tray()
+        self.setup_shortcuts()
+        self.add_msg("Rico", "Hey! I'm ready! 💗")
+        # Load chat history
+        if Path("chat_history.txt").exists():
+            self.chat.setPlainText(Path("chat_history.txt").read_text())
 
     def setup_ui(self):
         self.setWindowTitle("Rico Assistant")
@@ -57,7 +45,6 @@ def tray_click(self, reason):
         central = QWidget(objectName="central")
         self.setCentralWidget(central)
         layout = QVBoxLayout(central, spacing=10, contentsMargins=QMargins(20, 20, 20, 20))
-       
 
         # Header
         hdr = QHBoxLayout()
@@ -72,15 +59,18 @@ def tray_click(self, reason):
 
         # Quick Actions
         quick = QHBoxLayout()
-        actions = [("Snap", lambda: self.add_msg("Rico", self.rico.take_screenshot())),
-                   ("Clip", lambda: self.add_msg("Rico", "Reading clipboard...")),
-                   ("Time", lambda: self.add_msg("Rico", f"It's {datetime.datetime.now().strftime('%I:%M %p')}")),
-                   ("Memory", lambda: self.add_msg("Rico", "Checking memory bank...")),
-                  ("Calendar", self.show_calendar),
-                  ("Reminders", self.show_reminders),
-                  ("Volume", self.volume_ui),
-("Brightness", self.brightness_ui),
-("Dark Mode", self.dark_mode_ui),]
+        actions = [
+            ("Snap", lambda: self.add_msg("Rico", self.rico.take_screenshot())),
+            ("Clip", lambda: self.add_msg("Rico", "Reading clipboard...")),
+            ("Time", lambda: self.add_msg("Rico", f"It's {datetime.datetime.now().strftime('%I:%M %p')}")),
+            ("Memory", lambda: self.add_msg("Rico", "Checking memory bank...")),
+            ("Calendar", self.show_calendar),
+            ("Reminders", self.show_reminders),
+            ("Volume", self.volume_ui),
+            ("Brightness", self.brightness_ui),
+            ("Dark Mode", self.dark_mode_ui),
+            ("Analyze", self.analyze_image_ui),
+        ]
         for txt, fn in actions:
             btn = QPushButton(txt, clicked=fn)
             btn.setProperty("class", "quickBtn")
@@ -88,30 +78,12 @@ def tray_click(self, reason):
         quick.addStretch()
         layout.addLayout(quick)
 
-       # In the quick actions section, add:
-(" Analyze", self.analyze_image_ui),
-
-# Add this method:
-def analyze_image_ui(self):
-    """Open file dialog and analyze selected image"""
-    from PyQt5.QtWidgets import QFileDialog
-    
-    filepath, _ = QFileDialog.getOpenFileName(
-        self, "Select Image", os.path.expanduser("~"),
-        "Images (*.png *.jpg *.jpeg *.gif *.bmp *.tiff)"
-    )
-    
-    if filepath:
-        self.add_msg("Rico", f"Analyzing {os.path.basename(filepath)}...")
-        result = self.rico.analyze_image_file(filepath)
-        self.add_msg("Rico", f"Analysis: {result}")
-
         # Input Section
         inp = QHBoxLayout(spacing=8)
         self.voice_btn = QPushButton("MIC", objectName="voiceBtn", checkable=True, clicked=self.toggle_voice)
         self.field = QLineEdit(placeholderText="Type a message...", returnPressed=self.send_msg)
         self.send_btn = QPushButton("Send", clicked=self.send_msg)
-        
+
         inp.addWidget(self.voice_btn)
         inp.addWidget(self.field, 3)
         inp.addWidget(self.send_btn)
@@ -121,26 +93,58 @@ def analyze_image_ui(self):
         self.setStatusBar(self.status)
         self.status.showMessage("Ready")
 
-   # Keyboard shortcuts
-shortcut_send = QShortcut(QKeySequence("Ctrl+Return"), self)
-shortcut_send.activated.connect(self.send_msg)
+    def setup_tray(self):
+        """Add system tray icon"""
+        self.tray_icon = QSystemTrayIcon(self)
+        self.tray_icon.setIcon(self.style().standardIcon(QStyle.SP_ComputerIcon))
 
-shortcut_voice = QShortcut(QKeySequence("Ctrl+V"), self)
-shortcut_voice.activated.connect(self.toggle_voice)
+        tray_menu = QMenu()
+        show_action = tray_menu.addAction("Show")
+        show_action.triggered.connect(self.show)
+        hide_action = tray_menu.addAction("Hide")
+        hide_action.triggered.connect(self.hide)
+        tray_menu.addSeparator()
+        quit_action = tray_menu.addAction("Quit")
+        quit_action.triggered.connect(self.close)
 
-shortcut_quit = QShortcut(QKeySequence("Ctrl+Q"), self)
-shortcut_quit.activated.connect(self.close)
+        self.tray_icon.setContextMenu(tray_menu)
+        self.tray_icon.show()
+        self.tray_icon.activated.connect(self.tray_click)
+
+    def tray_click(self, reason):
+        if reason == QSystemTrayIcon.DoubleClick:
+            self.showNormal()
+            self.raise_()
+            self.activateWindow()
+
+    def closeEvent(self, event):
+        if self.tray_icon.isVisible():
+            self.hide()
+            event.ignore()
+        else:
+            event.accept()
+
+    def setup_shortcuts(self):
+        """Setup keyboard shortcuts"""
+        shortcut_send = QShortcut(QKeySequence("Ctrl+Return"), self)
+        shortcut_send.activated.connect(self.send_msg)
+
+        shortcut_voice = QShortcut(QKeySequence("Ctrl+V"), self)
+        shortcut_voice.activated.connect(self.toggle_voice)
+
+        shortcut_quit = QShortcut(QKeySequence("Ctrl+Q"), self)
+        shortcut_quit.activated.connect(self.close)
 
     def add_msg(self, sender, text):
         clr, pfx = ("#ffb3d9", "You") if sender == "You" else ("#ff3399", "Rico")
         self.chat.append(f"<div style='margin:4px 0;'><b style='color:{clr};'>{pfx}:</b> <span style='color:#fff;'>{text}</span></div>")
         self.chat.verticalScrollBar().setValue(self.chat.verticalScrollBar().maximum())
-        # Auto-save chat history
         Path("chat_history.txt").write_text(self.chat.toPlainText())
 
     def send_msg(self):
         txt = self.field.text().strip()
-        if not txt: return
+        if not txt:
+            return
         self.field.clear()
         self.add_msg("You", txt)
         self.status.showMessage("Thinking...")
@@ -151,7 +155,6 @@ shortcut_quit.activated.connect(self.close)
     def _process(self, txt):
         try:
             res = self.rico.chat(txt)
-            # Remove typing indicator
             cursor = self.chat.textCursor()
             cursor.movePosition(QTextCursor.End)
             cursor.select(QTextCursor.BlockUnderCursor)
@@ -169,36 +172,39 @@ shortcut_quit.activated.connect(self.close)
         self.voice_btn.setText("REC" if active else "MIC")
         self.status.showMessage("Listening..." if active else "Ready")
 
-def closeEvent(self, event):
-    if self.tray_icon.isVisible():
-        self.hide()
-        event.ignore()
-    else:
-        event.accept()
+    def show_calendar(self):
+        self.add_msg("Rico", "Checking calendar...")
+        result = self.rico.get_calendar_events()
+        self.add_msg("Rico", result)
 
-def show_calendar(self):
-    self.add_msg("Rico", "Checking calendar...")
-    result = self.rico.get_calendar_events()
-    self.add_msg("Rico", result)
+    def show_reminders(self):
+        self.add_msg("Rico", "Checking reminders...")
+        result = self.rico.get_reminders()
+        self.add_msg("Rico", result)
 
-def show_reminders(self):
-    self.add_msg("Rico", "Checking reminders...")
-    result = self.rico.get_reminders()
-    self.add_msg("Rico", result)
+    def volume_ui(self):
+        level, ok = QInputDialog.getInt(self, "Set Volume", "Volume (0-100):", 50, 0, 100)
+        if ok:
+            self.add_msg("Rico", self.rico.set_volume(level))
 
-def volume_ui(self):
-    level, ok = QInputDialog.getInt(self, "Set Volume", "Volume (0-100):", 50, 0, 100)
-    if ok:
-        self.add_msg("Rico", self.rico.set_volume(level))
+    def brightness_ui(self):
+        level, ok = QInputDialog.getInt(self, "Set Brightness", "Brightness (0-100):", 50, 0, 100)
+        if ok:
+            self.add_msg("Rico", self.rico.set_brightness(level))
 
-def brightness_ui(self):
-    level, ok = QInputDialog.getInt(self, "Set Brightness", "Brightness (0-100):", 50, 0, 100)
-    if ok:
-        self.add_msg("Rico", self.rico.set_brightness(level))
+    def dark_mode_ui(self):
+        self.add_msg("Rico", self.rico.toggle_dark_mode())
 
-def dark_mode_ui(self):
-    self.add_msg("Rico", self.rico.toggle_dark_mode())
-
+    def analyze_image_ui(self):
+        """Open file dialog and analyze selected image"""
+        filepath, _ = QFileDialog.getOpenFileName(
+            self, "Select Image", os.path.expanduser("~"),
+            "Images (*.png *.jpg *.jpeg *.gif *.bmp *.tiff)"
+        )
+        if filepath:
+            self.add_msg("Rico", f"Analyzing {os.path.basename(filepath)}...")
+            result = self.rico.analyze_image_file(filepath)
+            self.add_msg("Rico", f"Analysis: {result}")
 
 
 if __name__ == "__main__":
