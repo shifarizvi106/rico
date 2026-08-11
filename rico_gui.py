@@ -206,6 +206,13 @@ class RicoGUI(QMainWindow):
             result = self.rico.analyze_image_file(filepath)
             self.add_msg("Rico", f"Analysis: {result}")
 
+def send_notification(self, title, message):
+    """Send macOS notification"""
+    script = f'display notification "{message}" with title "{title}"'
+    subprocess.run(["osascript", "-e", script], capture_output=True)
+
+
+
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
