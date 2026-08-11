@@ -75,7 +75,9 @@ def tray_click(self, reason):
         actions = [("Snap", lambda: self.add_msg("Rico", self.rico.take_screenshot())),
                    ("Clip", lambda: self.add_msg("Rico", "Reading clipboard...")),
                    ("Time", lambda: self.add_msg("Rico", f"It's {datetime.datetime.now().strftime('%I:%M %p')}")),
-                   ("Memory", lambda: self.add_msg("Rico", "Checking memory bank..."))]
+                   ("Memory", lambda: self.add_msg("Rico", "Checking memory bank...")),
+                  ("📅 Calendar", self.show_calendar),
+                  ("⏰ Reminders", self.show_reminders),]
         for txt, fn in actions:
             btn = QPushButton(txt, clicked=fn)
             btn.setProperty("class", "quickBtn")
@@ -170,6 +172,16 @@ def closeEvent(self, event):
         event.ignore()
     else:
         event.accept()
+
+def show_calendar(self):
+    self.add_msg("Rico", "Checking calendar...")
+    result = self.rico.get_calendar_events()
+    self.add_msg("Rico", result)
+
+def show_reminders(self):
+    self.add_msg("Rico", "Checking reminders...")
+    result = self.rico.get_reminders()
+    self.add_msg("Rico", result)
 
 
 
