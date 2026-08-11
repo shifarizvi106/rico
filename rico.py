@@ -835,6 +835,62 @@ def start_wake_word(self):
         print("Wake word disabled - install pvporcupine")
 
 
+def summarize_pdf(self, filepath, sentences=5):
+    """Extract and summarize text from a PDF file"""
+    try:
+        import PyPDF2
+        from PyPDF2 import PdfReader
+        
+        if not os.path.exists(filepath):
+            return f"File not found: {filepath}"
+        
+        # Extract text from PDF
+        text = ""
+        with open(filepath, 'rb') as f:
+            reader = PdfReader(f)
+            total_pages = len(reader.pages)
+            
+            # Limit to first 10 pages to avoid token limits
+            pages_to_read = min(total_pages, 10)
+            
+            for i in range(pages_to_read):
+                page = reader.pages[i]
+                text += page.extract_text() + "\n"
+        
+        if not text.strip():
+            return "Couldn't extract text from this PDF. It might be scanned or image-based."
+        
+        # Truncate to avoid token limits
+        text = text[:5000]  # Limit to ~5000 chars
+        
+        # Use Gemini to summarize
+        if self.llm_model:
+            prompt = f"""
+Summarize the following PDF content in {sentences} clear, concise sentences.
+Focus on the main points and key takeaways.
+
+PDF Content:
+{text}
+
+Summary:
+"""
+            response = self.llm_model.generate_content(prompt)
+            return response.text.strip()
+        
+        return "AI offline. Cannot summarize PDF."
+        
+    except Exception as e:
+        return f"PDF summarization error: {str(e)}"
+
+elif "summarize pdf" in q_en or "pdf summary" in q_en:
+    match = re.search(r'(?:summarize|pdf)\s+(?:pdf\s+)?(.+?)(?:\s*\.\s*|$)', q_en)
+    if match:
+        filepath = os.path.expanduser(match.group(1).strip())
+        response = self.summarize_pdf(filepath)
+    else:
+        response = "Usage: summarize pdf ~/Documents/file.pdf"
+
+
 if __name__ == "__main__":
     import sys
     text_mode = "--text" in sys.argv or "--type" in sys.argv
