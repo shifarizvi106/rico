@@ -616,26 +616,68 @@ class RicoAssistant:
                 return 'ur'
         return 'en'
 
-    def _process_ai_query(self, query):
-        calc = self._calculate(query)
-        if calc:
-            return calc
+   def _process_ai_query(self, query: str) -> str:
+    # 1. Math
+    calc_result = self._calculate(query)
+    if calc_result:
+        return calc_result
 
-        if self.wolfram_client:
-            try:
-                res = self.wolfram_client.query(query)
-                return f"Calculated: {next(res.results).text}"
-            except:
-                pass
+    # 2. WolframAlpha
+    if getattr(self, 'wolfram_client', None):
+        try:
+            res = self.wolfram_client.query(query)
+            answer = next(res.results).text
+            return f"According to calculations: {answer}"
+        except Exception:
+            pass
 
-        if self.llm_model:
-            try:
-                prompt = f"# Soul\n{self.soul}\n\n# User\n{query}\n\n# Response as Rico"
-                return self.llm_model.generate_content(prompt).text.strip()
-            except:
-                return "AI error."
+    # 3. RAG
+    if hasattr(self, 'rag') and self.rag:
+        try:
+            rag_result = self.rag.query(query, k=3)
+            if rag_result and "No relevant information found" not in rag_result:
+                if getattr(self, 'llm_model', None):
+                    prompt = f"""
+# Soul
+{self.soul}
 
-        return "AI offline."
+# Knowledge Base (from your documents)
+{rag_result}
+
+# User Question
+{query}
+
+# Response
+Use the knowledge base above to answer. Cite your source. Be personal and concise.
+"""
+                    response = self.llm_model.generate_content(prompt)
+                    return response.text.strip()
+                return f"From your documents:\n\n{rag_result}"
+        except Exception as e:
+            print(f"RAG lookup error: {e}")
+
+    # 4. Gemini
+    if getattr(self, 'llm_model', None):
+        try:
+            traits = ", ".join(self.personality.get('traits', [])) if isinstance(self.personality, dict) else ""
+            prompt = f"""
+# Soul
+{self.soul}
+
+# Traits
+{traits}
+
+# User
+{query}
+
+# Response
+"""
+            response = self.llm_model.generate_content(prompt)
+            return response.text.strip()
+        except Exception as e:
+            return f"AI error: {e}"
+
+    return "AI offline."
 
     def index_documents(self, folder):
     """Index a folder of documents"""
