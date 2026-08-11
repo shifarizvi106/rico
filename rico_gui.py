@@ -22,7 +22,7 @@ class SplashScreen(QSplashScreen):
         painter = QPainter(pixmap)
         painter.setPen(QPen(QColor("#ff69b4"), 2))
         painter.setFont(QFont("Times New Roman", 28, QFont.Bold))
-        painter.drawText(pixmap.rect(), Qt.AlignCenter, "💗 RICO\nLoading...")
+        painter.drawText(pixmap.rect(), Qt.AlignCenter, " RICO\nLoading...")
         painter.end()
         super().__init__(pixmap)
         self.show()
@@ -35,7 +35,7 @@ class RicoGUI(QMainWindow):
         self.setup_ui()
         self.setup_tray()
         self.setup_shortcuts()
-        self.add_msg("Rico", "Hey! I'm ready! 💗")
+        self.add_msg("Rico", "Hey! I'm ready! ")
         # Load chat history
         if Path("chat_history.txt").exists():
             self.chat.setPlainText(Path("chat_history.txt").read_text())
@@ -84,6 +84,7 @@ class RicoGUI(QMainWindow):
             ("Brightness", self.brightness_ui),
             ("Dark Mode", self.dark_mode_ui),
             ("Analyze", self.analyze_image_ui),
+            ("PDF", self.summarize_pdf_ui),
         ]
         for txt, fn in actions:
             btn = QPushButton(txt, clicked=fn)
@@ -225,6 +226,17 @@ class RicoGUI(QMainWindow):
             self.add_msg("Rico", f"Analyzing {os.path.basename(filepath)}...")
             result = self.rico.analyze_image_file(filepath)
             self.add_msg("Rico", f"Analysis: {result}")
+
+def summarize_pdf_ui(self):
+    """Open file dialog and summarize selected PDF"""
+    filepath, _ = QFileDialog.getOpenFileName(
+        self, "Select PDF", os.path.expanduser("~"),
+        "PDF Files (*.pdf)"
+    )
+    if filepath:
+        self.add_msg("Rico", f"Summarizing {os.path.basename(filepath)}...")
+        result = self.rico.summarize_pdf(filepath)
+        self.add_msg("Rico", f"Summary: {result}")
 
 
 if __name__ == "__main__":
