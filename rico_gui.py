@@ -3,6 +3,7 @@ import sys
 import os
 import datetime
 import threading
+import subprocess
 from pathlib import Path
 
 from PyQt5.QtWidgets import *
@@ -12,6 +13,19 @@ from PyQt5.QtWidgets import QShortcut
 from PyQt5.QtGui import QKeySequence
 
 from rico import RicoAssistant
+
+
+class SplashScreen(QSplashScreen):
+    def __init__(self):
+        pixmap = QPixmap(400, 300)
+        pixmap.fill(QColor("#1a0a1a"))
+        painter = QPainter(pixmap)
+        painter.setPen(QPen(QColor("#ff69b4"), 2))
+        painter.setFont(QFont("Times New Roman", 28, QFont.Bold))
+        painter.drawText(pixmap.rect(), Qt.AlignCenter, "💗 RICO\nLoading...")
+        painter.end()
+        super().__init__(pixmap)
+        self.show()
 
 
 class RicoGUI(QMainWindow):
@@ -136,8 +150,9 @@ class RicoGUI(QMainWindow):
         shortcut_quit.activated.connect(self.close)
 
     def add_msg(self, sender, text):
+        timestamp = datetime.datetime.now().strftime("%I:%M %p")
         clr, pfx = ("#ffb3d9", "You") if sender == "You" else ("#ff3399", "Rico")
-        self.chat.append(f"<div style='margin:4px 0;'><b style='color:{clr};'>{pfx}:</b> <span style='color:#fff;'>{text}</span></div>")
+        self.chat.append(f"<div style='margin:4px 0;'><b style='color:{clr};'>{pfx}:</b> <span style='color:#fff;'>{text}</span> <span style='color:#666;font-size:10px;'>{timestamp}</span></div>")
         self.chat.verticalScrollBar().setValue(self.chat.verticalScrollBar().maximum())
         Path("chat_history.txt").write_text(self.chat.toPlainText())
 
@@ -171,6 +186,11 @@ class RicoGUI(QMainWindow):
         active = self.voice_btn.isChecked()
         self.voice_btn.setText("REC" if active else "MIC")
         self.status.showMessage("Listening..." if active else "Ready")
+
+    def send_notification(self, title, message):
+        """Send macOS notification"""
+        script = f'display notification "{message}" with title "{title}"'
+        subprocess.run(["osascript", "-e", script], capture_output=True)
 
     def show_calendar(self):
         self.add_msg("Rico", "Checking calendar...")
@@ -206,17 +226,18 @@ class RicoGUI(QMainWindow):
             result = self.rico.analyze_image_file(filepath)
             self.add_msg("Rico", f"Analysis: {result}")
 
-def send_notification(self, title, message):
-    """Send macOS notification"""
-    script = f'display notification "{message}" with title "{title}"'
-    subprocess.run(["osascript", "-e", script], capture_output=True)
-
-
-
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
     app.setStyle('Fusion')
+    
+    # Show splash screen
+    splash = SplashScreen()
+    app.processEvents()
+    
+    # Create main window
     win = RicoGUI()
+    splash.finish(win)
     win.show()
+    
     sys.exit(app.exec_())
