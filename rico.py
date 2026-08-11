@@ -20,6 +20,7 @@ from pathlib import Path
 import threading
 import time
 import random
+from rico_rag import RicoRAG
 
 try:
     import speech_recognition as sr
@@ -65,6 +66,9 @@ class RicoAssistant:
 
         # Start proactive loop
         self.start_proactive_loop()
+
+    # RAG
+    self.rag = RicoRAG()
 
     def _load_soul(self):
         soul_path = "data/soul.md"
@@ -633,6 +637,18 @@ class RicoAssistant:
 
         return "AI offline."
 
+    def index_documents(self, folder):
+    """Index a folder of documents"""
+    return self.rag.index_folder(folder)
+
+def search_knowledge(self, query):
+    """Search indexed documents"""
+    return self.rag.query(query)
+
+def get_knowledge_stats(self):
+    """Get knowledge base statistics"""
+    return self.rag.get_stats()
+
     def run(self):
         self.speak("Pick your language - English, Hindi, or Urdu.", 'en')
         self.speak("अपनी भाषा चुनें - हिंदी, उर्दू, या अंग्रेज़ी।", 'hi')
@@ -889,6 +905,25 @@ elif "summarize pdf" in q_en or "pdf summary" in q_en:
         response = self.summarize_pdf(filepath)
     else:
         response = "Usage: summarize pdf ~/Documents/file.pdf"
+elif "index" in q_en and "folder" in q_en:
+    match = re.search(r'index\s+folder\s+(.+?)(?:\s*\.\s*|$)', q_en)
+    if match:
+        folder = os.path.expanduser(match.group(1).strip())
+        response = self.index_documents(folder)
+    else:
+        response = "Usage: index folder ~/Documents"
+
+elif "search knowledge" in q_en:
+    query = q_en.replace("search knowledge", "").strip()
+    if query:
+        response = self.search_knowledge(query)
+    else:
+        response = "What would you like to search for?"
+
+elif "knowledge stats" in q_en:
+    response = self.get_knowledge_stats()
+
+
 
 
 if __name__ == "__main__":
