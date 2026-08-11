@@ -805,6 +805,35 @@ class RicoAssistant:
                 self.speak(final, self.language_code)
                 self.conversation_history.append({"assistant": final, "lang": self.language_code})
 
+def send_notification(self, title, message):
+    """Send macOS notification"""
+    script = f'display notification "{message}" with title "{title}"'
+    subprocess.run(["osascript", "-e", script], capture_output=True)
+
+def start_wake_word(self):
+    """Listen for "Hey Rico" wake word"""
+    try:
+        import pvporcupine
+        porcupine = pvporcupine.create(keywords=["hey rico"])
+        
+        def wake_listener():
+            import pyaudio
+            pa = pyaudio.PyAudio()
+            stream = pa.open(
+                rate=porcupine.sample_rate,
+                channels=1,
+                format=pyaudio.paInt16,
+                input=True,
+                frames_per_buffer=porcupine.frame_length
+            )
+            while True:
+                pcm = stream.read(porcupine.frame_length)
+                if porcupine.process(pcm) >= 0:
+                    self.speak("Yes? How can I help?")
+        threading.Thread(target=wake_listener, daemon=True).start()
+    except:
+        print("Wake word disabled - install pvporcupine")
+
 
 if __name__ == "__main__":
     import sys
