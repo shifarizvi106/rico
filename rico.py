@@ -17,14 +17,15 @@ from PIL import Image
 from io import BytesIO
 import sqlite3
 from pathlib import Path
+import threading
+import time
+import random
 
-# Text to speech only works when it is not in text mode
 try:
     import speech_recognition as sr
 except ImportError:
     sr = None
 
-# Images
 try:
     from bs4 import BeautifulSoup
 except ImportError:
@@ -53,8 +54,8 @@ class RicoAssistant:
         self.user_info = self._load_user_info()
         self.conversation_history = []
         self.image_cache = []
+        self.last_interaction = datetime.datetime.now()
 
-        # Initialize memory database
         if self.memory_enabled:
             self._init_memory_db()
 
@@ -62,8 +63,10 @@ class RicoAssistant:
         print(f" Supported languages: {', '.join(self.supported_langs)}")
         print(f" Memory: {'Enabled' if self.memory_enabled else 'Disabled'}")
 
+        # Start proactive loop
+        self.start_proactive_loop()
+
     def _load_soul(self):
-        """Load Rico's soul from soul.md"""
         soul_path = "data/soul.md"
         if os.path.exists(soul_path):
             try:
@@ -82,22 +85,20 @@ class RicoAssistant:
                 return None
             import wolframalpha
             return wolframalpha.Client(app_id)
-        except Exception as e:
-            print(f"WolframAlpha init failed: {e}")
+        except:
             return None
 
     def _initialize_gemini(self):
         try:
             api_key = os.getenv("GEMINI_API_KEY")
             if not api_key:
-                print("Gemini API key not found. Set GEMINI_API_KEY in .env")
+                print("Gemini API key not found.")
                 return None
             genai.configure(api_key=api_key)
             model = genai.GenerativeModel("gemini-2.0-flash-exp")
             print("Gemini LLM configured")
             return model
-        except Exception as e:
-            print(f"Gemini init failed: {e}")
+        except:
             return None
 
     def _load_personality(self):
@@ -130,63 +131,53 @@ class RicoAssistant:
         db_path = os.path.expanduser("~/rico_memory.db")
         conn = sqlite3.connect(db_path)
         c = conn.cursor()
-        c.execute('''
-            CREATE TABLE IF NOT EXISTS conversations (
-                id INTEGER PRIMARY KEY,
-                timestamp TEXT,
-                user_input TEXT,
-                response TEXT,
-                language TEXT
-            )
-        ''')
-        c.execute('''
-            CREATE TABLE IF NOT EXISTS facts (
-                id INTEGER PRIMARY KEY,
-                fact_type TEXT,
-                fact_value TEXT,
-                confidence REAL,
-                timestamp TEXT
-            )
-        ''')
+        c.execute('''CREATE TABLE IF NOT EXISTS conversations (
+            id INTEGER PRIMARY KEY,
+            timestamp TEXT,
+            user_input TEXT,
+            response TEXT,
+            language TEXT
+        )''')
+        c.execute('''CREATE TABLE IF NOT EXISTS facts (
+            id INTEGER PRIMARY KEY,
+            fact_type TEXT,
+            fact_value TEXT,
+            confidence REAL,
+            timestamp TEXT
+        )''')
         conn.commit()
         conn.close()
 
-   def speak(self, text: str, lang: str = None):
-    if not text:
-        return
-    if lang is None:
-        lang = self.language_code
-    print(f" {self.name} ({lang}): {text}")
-    
-    try:
-        import edge_tts
-        import asyncio
-        
-        voices = {
-            'en': 'en-US-JennyNeural',
-            'hi': 'hi-IN-SwaraNeural',
-            'ur': 'ur-PK-UzmaNeural'
-        }
-        voice = voices.get(lang, 'en-US-JennyNeural')
-        
-        async def speak_edge():
-            tts = edge_tts.Communicate(text, voice)
-            await tts.save("response.mp3")
-        
-        asyncio.run(speak_edge())
-        playsound("response.mp3")
-        os.remove("response.mp3")
-        
-    except:
+    def speak(self, text: str, lang: str = None):
+        if not text:
+            return
+        if lang is None:
+            lang = self.language_code
+        print(f" {self.name} ({lang}): {text}")
+
         try:
-            tts = gTTS(text=text, lang=lang, slow=False)
-            tts.save("response.mp3")
+            import edge_tts
+            import asyncio
+            voices = {'en': 'en-US-JennyNeural', 'hi': 'hi-IN-SwaraNeural', 'ur': 'ur-PK-UzmaNeural'}
+            voice = voices.get(lang, 'en-US-JennyNeural')
+
+            async def speak_edge():
+                tts = edge_tts.Communicate(text, voice)
+                await tts.save("response.mp3")
+
+            asyncio.run(speak_edge())
             playsound("response.mp3")
             os.remove("response.mp3")
-        except Exception as e:
-            print(f"Voice error: {e}")
+        except:
+            try:
+                tts = gTTS(text=text, lang=lang, slow=False)
+                tts.save("response.mp3")
+                playsound("response.mp3")
+                os.remove("response.mp3")
+            except:
+                pass
 
-    def _listen(self) -> str:
+    def _listen(self):
         if sr is None:
             return ""
         r = sr.Recognizer()
@@ -199,7 +190,7 @@ class RicoAssistant:
             except:
                 return ""
 
-    def _translate(self, text: str, src: str, dest: str) -> str:
+    def _translate(self, text, src, dest):
         if src == dest:
             return text
         try:
@@ -207,7 +198,7 @@ class RicoAssistant:
         except:
             return text
 
-    def _remember_fact(self, fact_type: str, fact_value: str, confidence: float = 0.8):
+    def _remember_fact(self, fact_type, fact_value, confidence=0.8):
         if not self.memory_enabled:
             return
         self.user_info[fact_type] = fact_value
@@ -221,7 +212,7 @@ class RicoAssistant:
         conn.close()
         print(f"Remembered: {fact_type} = {fact_value}")
 
-    def _recall_fact(self, fact_type: str) -> str:
+    def _recall_fact(self, fact_type):
         if fact_type in self.user_info:
             return self.user_info[fact_type]
         db_path = os.path.expanduser("~/rico_memory.db")
@@ -232,7 +223,7 @@ class RicoAssistant:
         conn.close()
         return result[0] if result else None
 
-    def _search_web_images(self, query: str, limit: int = 3) -> list:
+    def _search_web_images(self, query, limit=3):
         try:
             search_url = f"https://duckduckgo.com/?q={query.replace(' ', '+')}&iax=images&ia=images"
             headers = {'User-Agent': 'Mozilla/5.0'}
@@ -249,7 +240,7 @@ class RicoAssistant:
         except:
             return []
 
-    def _search_local_images(self, date_query: str) -> list:
+    def _search_local_images(self, date_query):
         try:
             parsed_date = self._parse_date_query(date_query)
             if not parsed_date:
@@ -277,14 +268,13 @@ class RicoAssistant:
         except:
             return []
 
-    def _parse_date_query(self, query: str):
+    def _parse_date_query(self, query):
         query = query.lower()
         today = datetime.datetime.now()
         if "today" in query or "now" in query:
             return today
         if "yesterday" in query:
             return today - datetime.timedelta(days=1)
-        import re
         days_match = re.search(r'last\s+(\d+)\s+days?', query)
         if days_match:
             days = int(days_match.group(1))
@@ -294,11 +284,9 @@ class RicoAssistant:
             month_name = date_match.group(1)
             day = int(date_match.group(2))
             year = int(date_match.group(3)) if date_match.group(3) else today.year
-            months = {
-                'january': 1, 'february': 2, 'march': 3, 'april': 4,
-                'may': 5, 'june': 6, 'july': 7, 'august': 8,
-                'september': 9, 'october': 10, 'november': 11, 'december': 12
-            }
+            months = {'january': 1, 'february': 2, 'march': 3, 'april': 4,
+                      'may': 5, 'june': 6, 'july': 7, 'august': 8,
+                      'september': 9, 'october': 10, 'november': 11, 'december': 12}
             month = months.get(month_name.lower(), 0)
             if month > 0:
                 try:
@@ -344,7 +332,7 @@ class RicoAssistant:
         except:
             return "System status unavailable."
 
-    def _search_wikipedia(self, query: str) -> str:
+    def _search_wikipedia(self, query):
         search_term = query.replace("wikipedia", "").strip()
         try:
             results = wikipedia.summary(search_term, sentences=3, auto_suggest=False)
@@ -352,7 +340,7 @@ class RicoAssistant:
         except:
             return "No Wikipedia results found."
 
-    def _calculate(self, query: str) -> str:
+    def _calculate(self, query):
         match = re.search(r'(\d+)\s*([+\-*/])\s*(\d+)', query)
         if match:
             try:
@@ -363,8 +351,7 @@ class RicoAssistant:
         return None
 
     def search_web(self, query):
-        search_url = f"https://www.google.com/search?q={query.replace(' ', '+')}"
-        webbrowser.open(search_url)
+        webbrowser.open(f"https://www.google.com/search?q={query.replace(' ', '+')}")
         return f"Searching for '{query}'..."
 
     def get_news(self):
@@ -391,68 +378,267 @@ class RicoAssistant:
         except:
             return "Weather unavailable."
 
-    def _process_ai_query(self, query: str) -> str:
-        # Check if it's a calculation
-        calc_result = self._calculate(query)
-        if calc_result:
-            return calc_result
+    def analyze_image(self, image_path, prompt="Describe what you see in this image"):
+        try:
+            img = Image.open(image_path)
+            img.thumbnail((800, 800))
+            img.save(image_path)
+            with open(image_path, "rb") as f:
+                img_data = base64.b64encode(f.read()).decode('utf-8')
+            if self.llm_model:
+                response = self.llm_model.generate_content([
+                    prompt,
+                    {"mime_type": "image/png", "data": img_data}
+                ])
+                return response.text.strip()
+            return "AI offline."
+        except Exception as e:
+            return f"Analysis error: {e}"
 
-     elif "screenshot" in query_en or "capture screen" in query_en:
-    response_en = self.take_screenshot()
+    def take_screenshot(self):
+        try:
+            import pyautogui
+            path = os.path.expanduser("~/rico_screenshot.png")
+            screenshot = pyautogui.screenshot()
+            screenshot.save(path)
+            result = self.analyze_image(path, "Describe what you see in this screenshot.")
+            return f"Screenshot analyzed:\n{result}"
+        except Exception as e:
+            return f"Couldn't take screenshot: {e}"
 
-        # Try WolframAlpha
+    def analyze_image_file(self, filepath, prompt="Describe what you see."):
+        try:
+            if not os.path.exists(filepath):
+                return f"File not found: {filepath}"
+            return self.analyze_image(filepath, prompt)
+        except Exception as e:
+            return f"Analysis error: {e}"
+
+    def get_calendar_events(self, days=7):
+        try:
+            script = f'''
+            tell application "Calendar"
+                set startDate to current date
+                set endDate to startDate + ({days} * days)
+                set theEvents to every event of calendar 1 whose start date is >= startDate and start date <= endDate
+                set eventList to ""
+                repeat with anEvent in theEvents
+                    set eventTitle to summary of anEvent
+                    set eventDate to start date of anEvent
+                    set eventTime to time string of eventDate
+                    set eventList to eventList & eventTitle & " at " & eventTime & "|"
+                end repeat
+                return eventList
+            end tell
+            '''
+            result = subprocess.run(["osascript", "-e", script], capture_output=True, text=True)
+            events = result.stdout.strip()
+            if events:
+                event_list = [e.strip() for e in events.split('|') if e.strip()]
+                if event_list:
+                    return "Upcoming events:\n" + "\n".join([f"  • {e}" for e in event_list[:10]])
+            return "No upcoming events found."
+        except:
+            return "Couldn't get calendar."
+
+    def add_calendar_event(self, title, date=None, time=None, duration=60):
+        try:
+            if date is None:
+                date = datetime.datetime.now().strftime("%Y-%m-%d")
+            if time is None:
+                time = "09:00"
+            start_datetime = f"{date} {time}:00"
+            end_datetime = (datetime.datetime.strptime(start_datetime, "%Y-%m-%d %H:%M:%S") +
+                           datetime.timedelta(minutes=duration)).strftime("%Y-%m-%d %H:%M:%S")
+            script = f'''
+            tell application "Calendar"
+                tell calendar "Home"
+                    set newEvent to make new event with properties {{summary:"{title}", start date:date "{start_datetime}", end date:date "{end_datetime}"}}
+                end tell
+            end tell
+            '''
+            subprocess.run(["osascript", "-e", script], check=True)
+            return f"Event '{title}' added for {date} at {time}."
+        except:
+            return "Couldn't add event."
+
+    def set_reminder(self, text, time, date=None):
+        try:
+            if date is None:
+                date = datetime.datetime.now().strftime("%Y-%m-%d")
+            due_datetime = f"{date} {time}:00"
+            script = f'''
+            tell application "Reminders"
+                tell default list
+                    set newReminder to make new reminder with properties {{name:"{text}", due date:date "{due_datetime}"}}
+                end tell
+            end tell
+            '''
+            subprocess.run(["osascript", "-e", script], check=True)
+            return f"Reminder set: '{text}' for {date} at {time}"
+        except:
+            return "Couldn't set reminder."
+
+    def get_reminders(self):
+        try:
+            script = '''
+            tell application "Reminders"
+                tell default list
+                    set reminderList to ""
+                    repeat with aReminder in reminders
+                        if completed of aReminder is false then
+                            set reminderTitle to name of aReminder
+                            set reminderDate to due date of aReminder
+                            if reminderDate is not missing value then
+                                set reminderList to reminderList & reminderTitle & " (due: " & (date string of reminderDate) & " at " & (time string of reminderDate) & ")|"
+                            else
+                                set reminderList to reminderList & reminderTitle & " (no due date)|"
+                            end if
+                        end if
+                    end repeat
+                    return reminderList
+                end tell
+            end tell
+            '''
+            result = subprocess.run(["osascript", "-e", script], capture_output=True, text=True)
+            reminders = result.stdout.strip()
+            if reminders:
+                reminder_list = [r.strip() for r in reminders.split('|') if r.strip()]
+                if reminder_list:
+                    return "Your reminders:\n" + "\n".join([f"  • {r}" for r in reminder_list[:10]])
+            return "No active reminders."
+        except:
+            return "Couldn't get reminders."
+
+    def complete_reminder(self, title):
+        try:
+            script = f'''
+            tell application "Reminders"
+                tell default list
+                    repeat with aReminder in reminders
+                        if name of aReminder contains "{title}" then
+                            set completed of aReminder to true
+                            return "Completed: " & name of aReminder
+                        end if
+                    end repeat
+                    return "Reminder not found"
+                end tell
+            end tell
+            '''
+            result = subprocess.run(["osascript", "-e", script], capture_output=True, text=True)
+            return result.stdout.strip()
+        except:
+            return "Couldn't complete reminder."
+
+    def set_volume(self, level):
+        try:
+            if 0 <= level <= 100:
+                subprocess.run(["osascript", "-e", f'set volume output volume {level}'], check=True)
+                return f"Volume set to {level}%"
+            return "Volume must be between 0 and 100"
+        except:
+            return "Couldn't set volume."
+
+    def set_brightness(self, level):
+        try:
+            if 0 <= level <= 100:
+                script = f'''
+                tell application "System Events"
+                    repeat with d in (get display brightness)
+                        set display brightness to {level/100}
+                    end repeat
+                end tell
+                '''
+                subprocess.run(["osascript", "-e", script], check=True)
+                return f"Brightness set to {level}%"
+            return "Brightness must be between 0 and 100"
+        except:
+            return "Couldn't set brightness."
+
+    def toggle_dark_mode(self):
+        try:
+            script = '''
+            tell application "System Events"
+                tell appearance preferences
+                    set dark mode to not dark mode
+                end tell
+            end tell
+            '''
+            subprocess.run(["osascript", "-e", script], check=True)
+            return "Dark mode toggled"
+        except:
+            return "Couldn't toggle dark mode."
+
+    def lock_screen(self):
+        try:
+            subprocess.run(["osascript", "-e", 'keystroke "q" using {control down, command down}'], check=True)
+            return "Screen locked"
+        except:
+            return "Couldn't lock screen."
+
+    def start_proactive_loop(self):
+        def proactive_worker():
+            while True:
+                time.sleep(300)
+                if hasattr(self, 'last_interaction'):
+                    hours_since = (datetime.datetime.now() - self.last_interaction).total_seconds() / 3600
+                    if 6 < hours_since < 12:
+                        messages = [
+                            "Hey, I was just thinking about you. How's your day going?",
+                            "It's been a while! What have you been up to?",
+                            "I'm here if you need anything. Just wanted to check in!"
+                        ]
+                        self.speak(random.choice(messages))
+                        self.last_interaction = datetime.datetime.now()
+                    elif hours_since >= 12:
+                        messages = [
+                            "Hey! It's been a while. I hope everything's okay.",
+                            "Just checking in... it's been a long time since we last talked.",
+                            "Missing our chats! What's new with you?"
+                        ]
+                        self.speak(random.choice(messages))
+                        self.last_interaction = datetime.datetime.now()
+        threading.Thread(target=proactive_worker, daemon=True).start()
+
+    def _detect_language(self, text):
+        hindi_chars = ['अ', 'आ', 'इ', 'ई', 'उ', 'ऊ', 'ऋ', 'ए', 'ऐ', 'ओ', 'औ',
+                       'क', 'ख', 'ग', 'घ', 'च', 'छ', 'ज', 'झ', 'ट', 'ठ', 'ड', 'ढ', 'ण',
+                       'त', 'थ', 'द', 'ध', 'न', 'प', 'फ', 'ब', 'भ', 'म', 'य', 'र', 'ल', 'व',
+                       'श', 'ष', 'स', 'ह']
+        for char in text:
+            if char in hindi_chars:
+                return 'hi'
+            if char in ['ی', 'ئ', 'ؤ', 'ے', 'ں']:
+                return 'ur'
+        return 'en'
+
+    def _process_ai_query(self, query):
+        calc = self._calculate(query)
+        if calc:
+            return calc
+
         if self.wolfram_client:
             try:
                 res = self.wolfram_client.query(query)
-                answer = next(res.results).text
-                return f"According to my calculations: {answer}"
+                return f"Calculated: {next(res.results).text}"
             except:
                 pass
 
-        # Try Gemini with soul
         if self.llm_model:
             try:
-                prompt = f"""
-# Soul
-{self.soul}
-
-# Personality
-{', '.join(self.personality['traits'])}
-
-# User
-{query}
-
-# Response as Rico
-"""
-                response = self.llm_model.generate_content(prompt)
-                return response.text.strip()
-            except Exception as e:
-                return f"AI error: {e}"
+                prompt = f"# Soul\n{self.soul}\n\n# User\n{query}\n\n# Response as Rico"
+                return self.llm_model.generate_content(prompt).text.strip()
+            except:
+                return "AI error."
 
         return "AI offline."
 
-    def _detect_language(self, text: str) -> str:
-        try:
-            hindi_chars = ['अ', 'आ', 'इ', 'ई', 'उ', 'ऊ', 'ऋ', 'ए', 'ऐ', 'ओ', 'औ',
-                          'क', 'ख', 'ग', 'घ', 'च', 'छ', 'ज', 'झ', 'ट', 'ठ', 'ड', 'ढ', 'ण',
-                          'त', 'थ', 'द', 'ध', 'न', 'प', 'फ', 'ब', 'भ', 'म', 'य', 'र', 'ल', 'व',
-                          'श', 'ष', 'स', 'ह']
-            for char in text:
-                if char in hindi_chars:
-                    return 'hi'
-                if char in ['ی', 'ئ', 'ؤ', 'ے', 'ں']:
-                    return 'ur'
-            return 'en'
-        except:
-            return 'en'
-
     def run(self):
-        self.speak("Hey! I'm Rico. Pick your language - English, Hindi, or Urdu.", 'en')
+        self.speak("Pick your language - English, Hindi, or Urdu.", 'en')
         self.speak("अपनी भाषा चुनें - हिंदी, उर्दू, या अंग्रेज़ी।", 'hi')
         self.speak("اپنی زبان منتخب کریں - ہندی، اردو، یا انگریزی۔", 'ur')
 
-        print("\nLanguage options: en (English), hi (Hindi), ur (Urdu)")
-        lang_input = input("Enter language code: ").lower().strip()
+        lang_input = input("Language code (en/hi/ur): ").lower().strip()
         if lang_input in ['hi', 'ur']:
             self.language_code = lang_input
         else:
@@ -462,503 +648,162 @@ class RicoAssistant:
             greeting = f"Welcome back, {self.user_info['name']}!"
         else:
             greeting = self.personality['greeting']
-        translated_greeting = self._translate(greeting, 'en', self.language_code)
-        self.speak(translated_greeting, self.language_code)
-
-        if self.text_mode:
-            print("\nCommands: open youtube, open google, open spotify, time, date, status, news, weather, search for [query], remember that [fact], what do you know about me, exit")
+        self.speak(self._translate(greeting, 'en', self.language_code), self.language_code)
 
         while True:
             if self.text_mode:
-                query_original = input("\nYou: ").strip().lower()
+                query = input("\nYou: ").strip().lower()
             else:
-                query_original = self._listen()
+                query = self._listen()
 
-            if not query_original:
+            if not query:
                 continue
 
-            detected_lang = self._detect_language(query_original)
-            query_en = self._translate(query_original, detected_lang, 'en')
-            print(f"Processed: '{query_en}'")
-            self.conversation_history.append({"user": query_original, "lang": detected_lang})
+            self.last_interaction = datetime.datetime.now()
 
-            if query_en in ["exit", "quit", "stop", "bye"]:
-                farewell = self._translate(self.personality['farewell'], 'en', self.language_code)
-                self.speak(farewell, self.language_code)
+            lang = self._detect_language(query)
+            q_en = self._translate(query, lang, 'en')
+
+            if q_en in ["exit", "quit", "stop", "bye"]:
+                self.speak(self._translate(self.personality['farewell'], 'en', self.language_code), self.language_code)
                 break
 
-            elif "open youtube" in query_en:
+            # Command handling
+            response = None
+            if "open youtube" in q_en:
                 self._open_youtube()
                 continue
-            elif "open google" in query_en:
+            elif "open google" in q_en:
                 self._open_google()
                 continue
-            elif "open spotify" in query_en:
+            elif "open spotify" in q_en:
                 self._open_spotify()
                 continue
-            elif "open vs code" in query_en or "open vscode" in query_en:
-                self._open_vscode()
-                continue
-            elif "time" in query_en:
+            elif "time" in q_en:
                 self._get_time()
                 continue
-            elif "date" in query_en:
+            elif "date" in q_en:
                 self._get_date()
                 continue
-            elif "status" in query_en or "system" in query_en:
-                response_en = self._get_system_status()
-            elif "search for" in query_en:
-                q = query_en.split("search for", 1)[1].strip()
-                response_en = self.search_web(q)
-            elif "news" in query_en or "headlines" in query_en:
-                response_en = self.get_news()
-            elif "weather" in query_en:
-                location = query_en.replace("weather", "").strip() or "current"
-                response_en = self.get_weather(location)
-            elif "remember" in query_en and "that" in query_en:
-                match = re.search(r'remember\s+that\s+(.+?)(?:\s*\.\s*|$)', query_en)
+            elif "status" in q_en or "system" in q_en:
+                response = self._get_system_status()
+            elif "search for" in q_en:
+                response = self.search_web(q_en.split("search for", 1)[1].strip())
+            elif "news" in q_en or "headlines" in q_en:
+                response = self.get_news()
+            elif "weather" in q_en:
+                location = q_en.replace("weather", "").strip() or "current"
+                response = self.get_weather(location)
+            elif "screenshot" in q_en or "capture screen" in q_en:
+                response = self.take_screenshot()
+            elif "analyze image" in q_en or "describe image" in q_en:
+                match = re.search(r'(?:analyze|describe)\s+image\s+(.+?)(?:\s*\.\s*|$)', q_en)
+                if match:
+                    filepath = os.path.expanduser(match.group(1).strip())
+                    response = self.analyze_image_file(filepath)
+                else:
+                    response = "Specify an image path."
+            elif "calendar" in q_en or "events" in q_en:
+                if "add" in q_en:
+                    match = re.search(r'add\s+event\s+(.+?)(?:\s+on\s+(\d{4}-\d{2}-\d{2}))?(?:\s+at\s+(\d{2}:\d{2}))?', q_en)
+                    if match:
+                        title = match.group(1).strip()
+                        date = match.group(2) if match.group(2) else None
+                        time = match.group(3) if match.group(3) else None
+                        response = self.add_calendar_event(title, date, time)
+                    else:
+                        response = "Format: add event [title] on [YYYY-MM-DD] at [HH:MM]"
+                else:
+                    response = self.get_calendar_events()
+            elif "reminder" in q_en or "remind" in q_en:
+                if "complete" in q_en or "done" in q_en:
+                    match = re.search(r'(?:complete|done)\s+reminder\s+(.+?)(?:\s*\.\s*|$)', q_en)
+                    if match:
+                        response = self.complete_reminder(match.group(1).strip())
+                    else:
+                        response = "Which reminder to complete?"
+                elif "list" in q_en or "show" in q_en:
+                    response = self.get_reminders()
+                else:
+                    match = re.search(r'remind\s+me\s+to\s+(.+?)\s+at\s+(\d{1,2}:\d{2})', q_en)
+                    if match:
+                        response = self.set_reminder(match.group(1).strip(), match.group(2).strip())
+                    else:
+                        response = "Usage: remind me to [task] at [HH:MM]"
+            elif "volume" in q_en:
+                match = re.search(r'volume\s+(\d+)', q_en)
+                if match:
+                    response = self.set_volume(int(match.group(1)))
+                else:
+                    response = "Usage: volume [0-100]"
+            elif "brightness" in q_en:
+                match = re.search(r'brightness\s+(\d+)', q_en)
+                if match:
+                    response = self.set_brightness(int(match.group(1)))
+                else:
+                    response = "Usage: brightness [0-100]"
+            elif "dark mode" in q_en:
+                response = self.toggle_dark_mode()
+            elif "lock screen" in q_en:
+                response = self.lock_screen()
+            elif "remember" in q_en and "that" in q_en:
+                match = re.search(r'remember\s+that\s+(.+?)(?:\s*\.\s*|$)', q_en)
                 if match:
                     fact = match.group(1).strip()
                     if " is " in fact:
-                        parts = fact.split(" is ", 1)
-                        if len(parts) == 2:
-                            self._remember_fact(parts[0].strip(), parts[1].strip())
-                            response_en = f"I'll remember that your {parts[0].strip()} is {parts[1].strip()}."
-                        else:
-                            self._remember_fact("general", fact)
-                            response_en = f"I'll remember that: {fact}"
+                        k, v = fact.split(" is ", 1)
+                        self._remember_fact(k.strip(), v.strip())
+                        response = f"Remembered: {k.strip()} is {v.strip()}"
                     else:
                         self._remember_fact("general", fact)
-                        response_en = f"I'll remember that: {fact}"
+                        response = f"Remembered: {fact}"
                 else:
-                    response_en = "What should I remember? Try: 'remember that my name is Rico'"
-            elif "what do you know about me" in query_en or "what do you remember" in query_en:
+                    response = "What should I remember?"
+            elif "what do you know about me" in q_en or "what do you remember" in q_en:
                 if self.user_info:
-                    facts = [f"Your {k} is {v}" for k, v in self.user_info.items()]
-                    response_en = "Here's what I know:\n" + "\n".join(facts)
+                    facts = [f"  Your {k} is {v}" for k, v in self.user_info.items()]
+                    response = "I know:\n" + "\n".join(facts)
                 else:
-                    response_en = "I don't know much about you yet."
-            elif "what is my" in query_en or "what's my" in query_en:
-                match = re.search(r"what('s| is) my (.+?)(?:\?|$)", query_en)
+                    response = "I don't know much about you yet."
+            elif "what is my" in q_en or "what's my" in q_en:
+                match = re.search(r"what('s| is) my (.+?)(?:\?|$)", q_en)
                 if match:
                     key = match.group(2).strip()
-                    value = self._recall_fact(key)
-                    if value:
-                        response_en = f"Your {key} is {value}."
-                    else:
-                        response_en = f"I don't know your {key}."
+                    val = self._recall_fact(key)
+                    response = f"Your {key} is {val}" if val else f"I don't know your {key}"
                 else:
-                    response_en = "What would you like to know?"
-            elif "find images" in query_en or "search images" in query_en:
-                match = re.search(r'(?:find|search)\s+images?\s+of\s+(.+?)(?:\s*\.\s*|$)', query_en)
+                    response = "What do you want to know?"
+            elif "find images" in q_en or "search images" in q_en:
+                match = re.search(r'(?:find|search)\s+images?\s+of\s+(.+?)(?:\s*\.\s*|$)', q_en)
                 if match:
-                    search_query = match.group(1).strip()
-                    self.speak(f"Searching for images of {search_query}...")
-                    images = self._search_web_images(search_query, limit=3)
+                    q = match.group(1).strip()
+                    images = self._search_web_images(q, limit=3)
                     if images:
-                        response_en = f"Found {len(images)} images for '{search_query}'.\n" + "\n".join(images[:3])
-                        for img_url in images[:1]:
-                            webbrowser.open(img_url)
+                        response = f"Found images for '{q}':\n" + "\n".join(images[:3])
+                        webbrowser.open(images[0])
                     else:
-                        response_en = f"No images found for '{search_query}'."
+                        response = f"No images found for '{q}'."
                 else:
-                    response_en = "What images are you looking for?"
-            elif "photos from" in query_en:
-                match = re.search(r'photos?\s+from\s+(.+?)(?:\s*\.\s*|$)', query_en)
+                    response = "What images to search for?"
+            elif "photos from" in q_en:
+                match = re.search(r'photos?\s+from\s+(.+?)(?:\s*\.\s*|$)', q_en)
                 if match:
-                    date_query = match.group(1).strip()
-                    photos = self._search_local_images(date_query)
+                    photos = self._search_local_images(match.group(1).strip())
                     if photos:
-                        response_en = f"Found {len(photos)} photos from {date_query}:\n" + "\n".join(photos[:3])
+                        response = "Found photos:\n" + "\n".join(photos[:3])
                     else:
-                        response_en = f"No photos found from {date_query}."
+                        response = "No photos found."
                 else:
-                    response_en = "What date should I search for?"
-            elif "wikipedia" in query_en:
-                response_en = self._search_wikipedia(query_en)
+                    response = "What date to search for?"
+            elif "wikipedia" in q_en:
+                response = self._search_wikipedia(q_en)
             else:
-                response_en = self._process_ai_query(query_en)
+                response = self._process_ai_query(q_en)
 
-            final_response = self._translate(response_en, 'en', self.language_code)
-            self.speak(final_response, self.language_code)
-            self.conversation_history.append({"assistant": final_response, "lang": self.language_code})
-
-def analyze_image(self, image_path, prompt="Describe what you see in this image"):
-    """Analyze an image using Gemini Vision"""
-    try:
-        import base64
-        from PIL import Image
-        
-        # Resize to reduce API cost
-        img = Image.open(image_path)
-        img.thumbnail((800, 800))
-        img.save(image_path)
-        
-        # Convert to base64
-        with open(image_path, "rb") as f:
-            img_data = base64.b64encode(f.read()).decode('utf-8')
-        
-        # Send to Gemini
-        if self.llm_model:
-            response = self.llm_model.generate_content([
-                prompt,
-                {"mime_type": "image/png", "data": img_data}
-            ])
-            return response.text.strip()
-        return "AI offline."
-    except Exception as e:
-        return f"Analysis error: {e}"
-
-def take_screenshot(self):
-    """Take a screenshot and analyze it"""
-    try:
-        import pyautogui
-        from PIL import Image
-        
-        path = os.path.expanduser("~/rico_screenshot.png")
-        screenshot = pyautogui.screenshot()
-        screenshot.save(path)
-        
-        # Analyze
-        result = self.analyze_image(path, "Describe what you see in this screenshot in detail.")
-        return f" Screenshot taken and analyzed:\n{result}"
-    except Exception as e:
-        return f"Couldn't take screenshot: {str(e)}"
-
-def analyze_image_file(self, filepath, prompt="Describe what you see in this image in detail."):
-    """Analyze any image file using Gemini Vision"""
-    try:
-        import base64
-        from PIL import Image
-        
-        if not os.path.exists(filepath):
-            return f"File not found: {filepath}"
-        
-        # Resize to reduce API cost
-        img = Image.open(filepath)
-        img.thumbnail((800, 800))
-        img.save(filepath)
-        
-        # Convert to base64
-        with open(filepath, "rb") as f:
-            img_data = base64.b64encode(f.read()).decode('utf-8')
-        
-        # Send to Gemini
-        if self.llm_model:
-            response = self.llm_model.generate_content([
-                prompt,
-                {"mime_type": "image/png", "data": img_data}
-            ])
-            return response.text.strip()
-        return "AI offline."
-    except Exception as e:
-        return f"Analysis error: {e}"
-
-elif "analyze image" in query_en or "describe image" in query_en:
-    # Extract file path
-    match = re.search(r'(?:analyze|describe)\s+image\s+(.+?)(?:\s*\.\s*|$)', query_en)
-    if match:
-        filepath = os.path.expanduser(match.group(1).strip())
-        response_en = self.analyze_image_file(filepath)
-    else:
-        response_en = "Please specify an image path. Example: analyze image ~/Pictures/photo.jpg"
-
-def get_calendar_events(self, days=7):
-    """Get calendar events for the next N days using Apple Calendar"""
-    try:
-        import subprocess
-        import datetime
-        
-        # Get events using AppleScript
-        script = f'''
-        tell application "Calendar"
-            set startDate to current date
-            set endDate to startDate + ({days} * days)
-            set theEvents to every event of calendar 1 whose start date is greater than or equal to startDate and start date is less than or equal to endDate
-            set eventList to ""
-            repeat with anEvent in theEvents
-                set eventTitle to summary of anEvent
-                set eventDate to start date of anEvent
-                set eventTime to time string of eventDate
-                set eventList to eventList & eventTitle & " at " & eventTime & "|"
-            end repeat
-            return eventList
-        end tell
-        '''
-        
-        result = subprocess.run(["osascript", "-e", script], capture_output=True, text=True)
-        events = result.stdout.strip()
-        
-        if events:
-            event_list = [e.strip() for e in events.split('|') if e.strip()]
-            if event_list:
-                return "Upcoming events:\n" + "\n".join([f"  • {e}" for e in event_list[:10]])
-        return "No upcoming events found."
-    except Exception as e:
-        return f"Couldn't get calendar: {e}"
-
-def add_calendar_event(self, title, date=None, time=None, duration=60):
-    """Add an event to Apple Calendar"""
-    try:
-        import subprocess
-        import datetime
-        
-        if date is None:
-            date = datetime.datetime.now().strftime("%Y-%m-%d")
-        if time is None:
-            time = "09:00"
-        
-        start_datetime = f"{date} {time}:00"
-        end_datetime = (datetime.datetime.strptime(start_datetime, "%Y-%m-%d %H:%M:%S") + 
-                       datetime.timedelta(minutes=duration)).strftime("%Y-%m-%d %H:%M:%S")
-        
-        script = f'''
-        tell application "Calendar"
-            tell calendar "Home"
-                set newEvent to make new event with properties {{summary:"{title}", start date:date "{start_datetime}", end date:date "{end_datetime}"}}
-            end tell
-        end tell
-        '''
-        
-        subprocess.run(["osascript", "-e", script], check=True)
-        return f"Event '{title}' added for {date} at {time}."
-    except Exception as e:
-        return f"Couldn't add event: {e}"
-
-elif "calendar" in query_en or "events" in query_en:
-    if "add" in query_en:
-        # Extract event details
-        match = re.search(r'add\s+event\s+(.+?)(?:\s+on\s+(\d{4}-\d{2}-\d{2}))?(?:\s+at\s+(\d{2}:\d{2}))?', query_en)
-        if match:
-            title = match.group(1).strip()
-            date = match.group(2) if match.group(2) else None
-            time = match.group(3) if match.group(3) else None
-            response_en = self.add_calendar_event(title, date, time)
-        else:
-            response_en = "Please specify: add event [title] on [YYYY-MM-DD] at [HH:MM]"
-    else:
-        response_en = self.get_calendar_events()
-
-def set_reminder(self, text, time, date=None):
-    """Set a reminder using Apple Reminders"""
-    try:
-        import subprocess
-        import datetime
-        
-        if date is None:
-            date = datetime.datetime.now().strftime("%Y-%m-%d")
-        
-        due_datetime = f"{date} {time}:00"
-        
-        script = f'''
-        tell application "Reminders"
-            tell default list
-                set newReminder to make new reminder with properties {{name:"{text}", due date:date "{due_datetime}"}}
-            end tell
-        end tell
-        '''
-        
-        subprocess.run(["osascript", "-e", script], check=True)
-        return f"Reminder set: '{text}' for {date} at {time}"
-    except Exception as e:
-        return f"Couldn't set reminder: {e}"
-
-def get_reminders(self):
-    """Get active reminders"""
-    try:
-        import subprocess
-        
-        script = '''
-        tell application "Reminders"
-            tell default list
-                set reminderList to ""
-                repeat with aReminder in reminders
-                    if completed of aReminder is false then
-                        set reminderTitle to name of aReminder
-                        set reminderDate to due date of aReminder
-                        if reminderDate is not missing value then
-                            set reminderList to reminderList & reminderTitle & " (due: " & (date string of reminderDate) & " at " & (time string of reminderDate) & ")|"
-                        else
-                            set reminderList to reminderList & reminderTitle & " (no due date)|"
-                        end if
-                    end if
-                end repeat
-                return reminderList
-            end tell
-        end tell
-        '''
-        
-        result = subprocess.run(["osascript", "-e", script], capture_output=True, text=True)
-        reminders = result.stdout.strip()
-        
-        if reminders:
-            reminder_list = [r.strip() for r in reminders.split('|') if r.strip()]
-            if reminder_list:
-                return "Your reminders:\n" + "\n".join([f"  • {r}" for r in reminder_list[:10]])
-        return "No active reminders."
-    except Exception as e:
-        return f"Couldn't get reminders: {e}"
-
-def complete_reminder(self, title):
-    """Mark a reminder as completed"""
-    try:
-        import subprocess
-        
-        script = f'''
-        tell application "Reminders"
-            tell default list
-                repeat with aReminder in reminders
-                    if name of aReminder contains "{title}" then
-                        set completed of aReminder to true
-                        return "Completed: " & name of aReminder
-                    end if
-                end repeat
-                return "Reminder not found"
-            end tell
-        end tell
-        '''
-        
-        result = subprocess.run(["osascript", "-e", script], capture_output=True, text=True)
-        return result.stdout.strip()
-    except Exception as e:
-        return f"Couldn't complete reminder: {e}"
-
-elif "reminder" in query_en or "remind" in query_en:
-    if "complete" in query_en or "done" in query_en:
-        # Extract reminder title
-        match = re.search(r'(?:complete|done)\s+reminder\s+(.+?)(?:\s*\.\s*|$)', query_en)
-        if match:
-            title = match.group(1).strip()
-            response_en = self.complete_reminder(title)
-        else:
-            response_en = "Which reminder to complete?"
-    elif "list" in query_en or "show" in query_en:
-        response_en = self.get_reminders()
-    else:
-        # Set reminder: remind me to [task] at [time]
-        match = re.search(r'remind\s+me\s+to\s+(.+?)\s+at\s+(\d{1,2}:\d{2})', query_en)
-        if match:
-            task = match.group(1).strip()
-            time = match.group(2).strip()
-            response_en = self.set_reminder(task, time)
-        else:
-            response_en = "Usage: remind me to [task] at [HH:MM]"
-
-def set_volume(self, level):
-    """Set system volume (0-100)"""
-    try:
-        import subprocess
-        if 0 <= level <= 100:
-            script = f'set volume output volume {level}'
-            subprocess.run(["osascript", "-e", script], check=True)
-            return f"Volume set to {level}%"
-        return "Volume must be between 0 and 100"
-    except Exception as e:
-        return f"Couldn't set volume: {e}"
-
-def set_brightness(self, level):
-    """Set display brightness (0-100)"""
-    try:
-        import subprocess
-        if 0 <= level <= 100:
-            script = f'''
-            tell application "System Events"
-                repeat with d in (get display brightness)
-                    set display brightness to {level/100}
-                end repeat
-            end tell
-            '''
-            subprocess.run(["osascript", "-e", script], check=True)
-            return f"Brightness set to {level}%"
-        return "Brightness must be between 0 and 100"
-    except Exception as e:
-        return f"Couldn't set brightness: {e}"
-
-def toggle_dark_mode(self):
-    """Toggle dark mode on/off"""
-    try:
-        import subprocess
-        script = '''
-        tell application "System Events"
-            tell appearance preferences
-                set dark mode to not dark mode
-            end tell
-        end tell
-        '''
-        subprocess.run(["osascript", "-e", script], check=True)
-        return "Dark mode toggled"
-    except Exception as e:
-        return f"Couldn't toggle dark mode: {e}"
-
-def lock_screen(self):
-    """Lock the screen"""
-    try:
-        import subprocess
-        script = '''
-        tell application "System Events"
-            keystroke "q" using {control down, command down}
-        end tell
-        '''
-        subprocess.run(["osascript", "-e", script], check=True)
-        return "Screen locked"
-    except Exception as e:
-        return f"Couldn't lock screen: {e}"
-
-def restart_mac(self):
-    """Restart the Mac (requires confirmation)"""
-    try:
-        import subprocess
-        script = '''
-        tell application "System Events"
-            restart
-        end tell
-        '''
-        subprocess.run(["osascript", "-e", script], check=True)
-        return "Restarting..."
-    except Exception as e:
-        return f"Couldn't restart: {e}"
-
-def shutdown_mac(self):
-    """Shutdown the Mac (requires confirmation)"""
-    try:
-        import subprocess
-        script = '''
-        tell application "System Events"
-            shut down
-        end tell
-        '''
-        subprocess.run(["osascript", "-e", script], check=True)
-        return "Shutting down..."
-    except Exception as e:
-        return f"Couldn't shutdown: {e}"
-
-elif "volume" in query_en:
-    match = re.search(r'volume\s+(\d+)', query_en)
-    if match:
-        level = int(match.group(1))
-        response_en = self.set_volume(level)
-    else:
-        response_en = "Usage: volume [0-100]"
-
-elif "brightness" in query_en:
-    match = re.search(r'brightness\s+(\d+)', query_en)
-    if match:
-        level = int(match.group(1))
-        response_en = self.set_brightness(level)
-    else:
-        response_en = "Usage: brightness [0-100]"
-
-elif "dark mode" in query_en:
-    response_en = self.toggle_dark_mode()
-
-elif "lock screen" in query_en:
-    response_en = self.lock_screen()
-
-elif "restart" in query_en:
-    response_en = self.restart_mac()
-
-elif "shutdown" in query_en:
-    response_en = self.shutdown_mac()
+            if response:
+                final = self._translate(response, 'en', self.language_code)
+                self.speak(final, self.language_code)
+                self.conversation_history.append({"assistant": final, "lang": self.language_code})
 
 
 if __name__ == "__main__":
