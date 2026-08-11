@@ -5,6 +5,8 @@ from PyQt5.QtWidgets import *
 from PyQt5.QtCore import *
 from PyQt5.QtGui import *
 from rico import RicoAssistant
+from PyQt5.QtWidgets import QShortcut
+from PyQt5.QtGui import QKeySequence
 
 class RicoGUI(QMainWindow):
    def setup_tray(self):
@@ -55,6 +57,7 @@ def tray_click(self, reason):
         central = QWidget(objectName="central")
         self.setCentralWidget(central)
         layout = QVBoxLayout(central, spacing=10, contentsMargins=QMargins(20, 20, 20, 20))
+       
 
         # Header
         hdr = QHBoxLayout()
@@ -94,6 +97,16 @@ def tray_click(self, reason):
         self.status = QStatusBar()
         self.setStatusBar(self.status)
         self.status.showMessage("Ready")
+
+   # Keyboard shortcuts
+shortcut_send = QShortcut(QKeySequence("Ctrl+Return"), self)
+shortcut_send.activated.connect(self.send_msg)
+
+shortcut_voice = QShortcut(QKeySequence("Ctrl+V"), self)
+shortcut_voice.activated.connect(self.toggle_voice)
+
+shortcut_quit = QShortcut(QKeySequence("Ctrl+Q"), self)
+shortcut_quit.activated.connect(self.close)
 
     def add_msg(self, sender, text):
         clr, pfx = ("#ffb3d9", "You") if sender == "You" else ("#ff3399", "Rico")
