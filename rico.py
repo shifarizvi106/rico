@@ -663,6 +663,82 @@ elif "analyze image" in query_en or "describe image" in query_en:
     else:
         response_en = "Please specify an image path. Example: analyze image ~/Pictures/photo.jpg"
 
+def get_calendar_events(self, days=7):
+    """Get calendar events for the next N days using Apple Calendar"""
+    try:
+        import subprocess
+        import datetime
+        
+        # Get events using AppleScript
+        script = f'''
+        tell application "Calendar"
+            set startDate to current date
+            set endDate to startDate + ({days} * days)
+            set theEvents to every event of calendar 1 whose start date is greater than or equal to startDate and start date is less than or equal to endDate
+            set eventList to ""
+            repeat with anEvent in theEvents
+                set eventTitle to summary of anEvent
+                set eventDate to start date of anEvent
+                set eventTime to time string of eventDate
+                set eventList to eventList & eventTitle & " at " & eventTime & "|"
+            end repeat
+            return eventList
+        end tell
+        '''
+        
+        result = subprocess.run(["osascript", "-e", script], capture_output=True, text=True)
+        events = result.stdout.strip()
+        
+        if events:
+            event_list = [e.strip() for e in events.split('|') if e.strip()]
+            if event_list:
+                return "Upcoming events:\n" + "\n".join([f"  • {e}" for e in event_list[:10]])
+        return "No upcoming events found."
+    except Exception as e:
+        return f"Couldn't get calendar: {e}"
+
+def add_calendar_event(self, title, date=None, time=None, duration=60):
+    """Add an event to Apple Calendar"""
+    try:
+        import subprocess
+        import datetime
+        
+        if date is None:
+            date = datetime.datetime.now().strftime("%Y-%m-%d")
+        if time is None:
+            time = "09:00"
+        
+        start_datetime = f"{date} {time}:00"
+        end_datetime = (datetime.datetime.strptime(start_datetime, "%Y-%m-%d %H:%M:%S") + 
+                       datetime.timedelta(minutes=duration)).strftime("%Y-%m-%d %H:%M:%S")
+        
+        script = f'''
+        tell application "Calendar"
+            tell calendar "Home"
+                set newEvent to make new event with properties {{summary:"{title}", start date:date "{start_datetime}", end date:date "{end_datetime}"}}
+            end tell
+        end tell
+        '''
+        
+        subprocess.run(["osascript", "-e", script], check=True)
+        return f"Event '{title}' added for {date} at {time}."
+    except Exception as e:
+        return f"Couldn't add event: {e}"
+
+elif "calendar" in query_en or "events" in query_en:
+    if "add" in query_en:
+        # Extract event details
+        match = re.search(r'add\s+event\s+(.+?)(?:\s+on\s+(\d{4}-\d{2}-\d{2}))?(?:\s+at\s+(\d{2}:\d{2}))?', query_en)
+        if match:
+            title = match.group(1).strip()
+            date = match.group(2) if match.group(2) else None
+            time = match.group(3) if match.group(3) else None
+            response_en = self.add_calendar_event(title, date, time)
+        else:
+            response_en = "Please specify: add event [title] on [YYYY-MM-DD] at [HH:MM]"
+    else:
+        response_en = self.get_calendar_events()
+
 
 if __name__ == "__main__":
     import sys
