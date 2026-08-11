@@ -625,6 +625,44 @@ def take_screenshot(self):
     except Exception as e:
         return f"Couldn't take screenshot: {str(e)}"
 
+def analyze_image_file(self, filepath, prompt="Describe what you see in this image in detail."):
+    """Analyze any image file using Gemini Vision"""
+    try:
+        import base64
+        from PIL import Image
+        
+        if not os.path.exists(filepath):
+            return f"File not found: {filepath}"
+        
+        # Resize to reduce API cost
+        img = Image.open(filepath)
+        img.thumbnail((800, 800))
+        img.save(filepath)
+        
+        # Convert to base64
+        with open(filepath, "rb") as f:
+            img_data = base64.b64encode(f.read()).decode('utf-8')
+        
+        # Send to Gemini
+        if self.llm_model:
+            response = self.llm_model.generate_content([
+                prompt,
+                {"mime_type": "image/png", "data": img_data}
+            ])
+            return response.text.strip()
+        return "AI offline."
+    except Exception as e:
+        return f"Analysis error: {e}"
+
+elif "analyze image" in query_en or "describe image" in query_en:
+    # Extract file path
+    match = re.search(r'(?:analyze|describe)\s+image\s+(.+?)(?:\s*\.\s*|$)', query_en)
+    if match:
+        filepath = os.path.expanduser(match.group(1).strip())
+        response_en = self.analyze_image_file(filepath)
+    else:
+        response_en = "Please specify an image path. Example: analyze image ~/Pictures/photo.jpg"
+
 
 if __name__ == "__main__":
     import sys
