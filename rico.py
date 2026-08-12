@@ -29,10 +29,13 @@ try:
 except ImportError:
     wolframalpha = None
 
+# ===== NEW: Google GenAI SDK =====
 try:
-    import google.generativeai as genai
+    from google import genai
+    GENAI_AVAILABLE = True
 except ImportError:
     genai = None
+    GENAI_AVAILABLE = False
 
 try:
     from gtts import gTTS
@@ -154,11 +157,12 @@ class RicoAssistant:
         self.image_cache: List[str] = []
         self._last_prediction: Optional[str] = None
         self._db_lock: threading.Lock = threading.Lock()
+        self.genai_client: Optional[Any] = None  # New client
 
         # External clients
         self.translator: Optional[Any] = Translator() if Translator else None
         self.wolfram_client: Optional[Any] = self._initialize_wolfram()
-        self.llm_model: Optional[Any] = self._initialize_gemini()
+        self.llm_model: Optional[Any] = self._initialize_gemini()  # Now returns the client
         self.rag: Optional[Any] = RicoRAG() if RicoRAG else None
 
         # Personality & memory
@@ -235,14 +239,25 @@ class RicoAssistant:
         return wolframalpha.Client(app_id)
 
     def _initialize_gemini(self) -> Optional[Any]:
-        """Initialize Gemini LLM client if API key is available."""
+        """
+        Initialize Gemini using the new google-genai SDK.
+
+        Returns:
+            The Gemini client object, or None if unavailable.
+        """
         api_key = os.getenv("GEMINI_API_KEY")
-        if not api_key or genai is None:
-            print("Gemini API key not found or google-generativeai not installed.")
+        if not api_key or not GENAI_AVAILABLE:
+            print("Gemini API key not found or google-genai SDK not installed.")
+            print("Install: pip install google-genai")
             return None
-        genai.configure(api_key=api_key)
-        print("Gemini LLM configured")
-        return genai.GenerativeModel("gemini-2.0-flash-exp")
+
+        try:
+            self.genai_client = genai.Client(api_key=api_key)
+            print("✅ Gemini 2.0 configured (new SDK)")
+            return self.genai_client
+        except Exception as e:
+            print(f"Gemini init error: {e}")
+            return None
 
     # -----------------------------------------------------------------------
     # Database (thread-safe)
@@ -679,21 +694,27 @@ class RicoAssistant:
         Returns:
             AI-generated description of the image.
         """
-        if self.llm_model is None:
-            return "AI offline."
+        if self.genai_client is None:
+            return "Gemini client not initialized. Check your API key."
+
         path = Path(image_path).expanduser()
         if not path.exists():
             return f"File not found: {path}"
+
         try:
             img = Image.open(path)
             img.thumbnail((800, 800))
             buffer = BytesIO()
             img.save(buffer, format="PNG")
             img_data = base64.b64encode(buffer.getvalue()).decode("utf-8")
-            response = self.llm_model.generate_content([
-                prompt,
-                {"mime_type": "image/png", "data": img_data},
-            ])
+
+            response = self.genai_client.models.generate_content(
+                model="gemini-2.0-flash-exp",
+                contents=[
+                    prompt,
+                    {"mime_type": "image/png", "data": img_data},
+                ]
+            )
             return response.text.strip()
         except Exception as exc:
             return f"Analysis error: {exc}"
@@ -954,7 +975,7 @@ class RicoAssistant:
             try:
                 rag_result = self.rag.query(query, k=3)
                 if rag_result and "No relevant information found" not in rag_result:
-                    if self.llm_model:
+                    if self.genai_client:
                         prompt = f"""
 # Soul
 {self.soul}
@@ -968,14 +989,17 @@ class RicoAssistant:
 # Response
 Use the knowledge base above to answer. Cite your source. Be personal and concise.
 """
-                        response = self.llm_model.generate_content(prompt)
+                        response = self.genai_client.models.generate_content(
+                            model="gemini-2.0-flash-exp",
+                            contents=prompt
+                        )
                         return response.text.strip()
                     return f"From your documents:\n\n{rag_result}"
             except Exception as exc:
                 print(f"RAG lookup error: {exc}")
 
         # 4. Gemini fallback
-        if self.llm_model:
+        if self.genai_client:
             try:
                 traits = ", ".join(self.personality.get("traits", [])) if isinstance(self.personality, dict) else ""
                 prompt = f"""
@@ -990,7 +1014,10 @@ Use the knowledge base above to answer. Cite your source. Be personal and concis
 
 # Response
 """
-                response = self.llm_model.generate_content(prompt)
+                response = self.genai_client.models.generate_content(
+                    model="gemini-2.0-flash-exp",
+                    contents=prompt
+                )
                 return response.text.strip()
             except Exception as exc:
                 return f"AI error: {exc}"
@@ -1079,7 +1106,7 @@ Use the knowledge base above to answer. Cite your source. Be personal and concis
                 return "Could not extract text — PDF may be scanned or image-based."
 
             text = text[:5000]
-            if self.llm_model:
+            if self.genai_client:
                 prompt = f"""
 Summarize the following PDF content in {sentences} clear, concise sentences.
 Focus on the main points and key takeaways.
@@ -1089,9 +1116,12 @@ PDF Content:
 
 Summary:
 """
-                response = self.llm_model.generate_content(prompt)
+                response = self.genai_client.models.generate_content(
+                    model="gemini-2.0-flash-exp",
+                    contents=prompt
+                )
                 return response.text.strip()
-            return "AI offline. Cannot summarize PDF."
+            return "Gemini client not available."
         except Exception as exc:
             return f"PDF summarisation error: {exc}"
 
@@ -1332,11 +1362,14 @@ Summary:
             title, text = output.split("|||", 1)
             text = text[:4000]
 
-            if self.llm_model:
+            if self.genai_client:
                 prompt = f"Summarise the following web page in 3-4 concise bullet points.\n\nPage Title: {title}\n\nContent:\n{text}\n\nSummary:"
-                response = self.llm_model.generate_content(prompt)
+                response = self.genai_client.models.generate_content(
+                    model="gemini-2.0-flash-exp",
+                    contents=prompt
+                )
                 return f"Summary of '{title}':\n\n{response.text.strip()}"
-            return "AI offline. Cannot summarise page."
+            return "Gemini client not available. Cannot summarise page."
         except Exception as exc:
             return f"Safari error: {exc}"
 
@@ -1539,11 +1572,14 @@ Summary:
             text = result.stdout.strip()[:3000]
             if not text:
                 return "No unread emails to summarise."
-            if self.llm_model:
+            if self.genai_client:
                 prompt = f"Summarise these unread emails in concise bullet points:\n\n{text}\n\nSummary:"
-                response = self.llm_model.generate_content(prompt)
+                response = self.genai_client.models.generate_content(
+                    model="gemini-2.0-flash-exp",
+                    contents=prompt
+                )
                 return response.text.strip()
-            return "AI offline."
+            return "Gemini client not available."
         except Exception as exc:
             return f"Mail error: {exc}"
 
