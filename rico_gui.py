@@ -1,18 +1,4 @@
 #!/usr/bin/env python3
-"""
-Rico GUI — A professional PyQt5 interface for the Rico AI Assistant.
-
-Features:
-    - Professional rose-gold theme
-    - Thread-safe background processing
-    - Lazy-loaded assistant (non-blocking startup)
-    - System tray integration
-    - Settings and About dialogs
-    - Persistent chat history
-    - Keyboard shortcuts
-    - Tooltips on all controls
-"""
-
 import sys
 import os
 import datetime
