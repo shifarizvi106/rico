@@ -1,35 +1,176 @@
 cat > .gitignore << 'EOF'
+# ============================================
 # Python
+# ============================================
 venv/
+env/
+ENV/
+.venv/
 __pycache__/
 *.pyc
 *.pyo
 *.pyd
 .Python
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+*.whl
+pip-log.txt
+pip-delete-this-directory.txt
 
-# Rico Data (user info, memory, logs)
+# ============================================
+# IDE / Editor
+# ============================================
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+*.iml
+*.ipr
+*.iws
+.classpath
+.project
+.settings/
+
+# ============================================
+# Rico Project Specific
+# ============================================
+# User data (PERSONAL - NEVER COMMIT)
+rico_user_info.json
+rico_memory.db
+rico_*.json
 *.db
 *.sqlite
 *.sqlite3
-*.json
 *.log
+
+# Audio files (generated)
 *.mp3
 *.wav
+*.m4a
+*.flac
 
-# Secrets
+# Screenshots & images
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.heic
+*.bmp
+*.tiff
+rico_screenshot.png
+nexa_screenshot.png
+
+# RAG Knowledge Base (CAN BE LARGE)
+rico_knowledge/
+*.pkl
+*.pickle
+chroma_db/
+.chroma/
+
+# ============================================
+# Secrets & Environment
+# ============================================
 .env
+.env.local
+.env.*.local
 *.key
 *.pem
+*.crt
+*.p12
+secrets/
+credentials/
 
-# IDE
-.vscode/
-.idea/
+# ============================================
+# Testing
+# ============================================
+.pytest_cache/
+.tox/
+.coverage
+htmlcov/
+*.cover
+.testrepository/
+
+# ============================================
+# Documentation
+# ============================================
+docs/_build/
+docs/_static/
+docs/_templates/
+*.epub
+*.mobi
+*.pdf
+
+# ============================================
+# System Files
+# ============================================
+Thumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+*.lnk
+
+# ============================================
+# Backup Files
+# ============================================
+*.bak
+*.backup
+*.tmp
+*.temp
+*~
+*.orig
+*.rej
+
+# ============================================
+# OS Specific
+# ============================================
+# macOS
 .DS_Store
+.AppleDouble
+.LSOverride
+._*
+.Spotlight-V100
+.Trashes
+.fseventsd
+
+# Linux
 *.swp
 *.swo
+*~
+.directory
+.Trash-*
 
-# Build
-dist/
-build/
-*.egg-info/
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+*.lnk
+
+# ============================================
+# Project specific - Rico
+# ============================================
+# Chat history (contains conversations)
+chat_history.txt
+
+# Playwright (web automation)
+playwright-report/
+test-results/
+
+# PyInstaller
+*.spec
+*.manifest
+*.exe
+
+# ============================================
+# Misc
+# ============================================
+*.tar.gz
+*.zip
+*.rar
+*.7z
+node_modules/
 EOF
